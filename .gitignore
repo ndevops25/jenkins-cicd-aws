@@ -12,8 +12,6 @@
 **/*_override.tf
 **/*_override.tf.json
 
-terraform/modules/compute/jenkins-configuration.sh
-
 # Importante: NÃO ignorar terraform.lock.hcl no root do módulo
 !terraform/.terraform.lock.hcl
 
