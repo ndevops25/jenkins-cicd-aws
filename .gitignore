@@ -1,0 +1,50 @@
+# Terraform - Ignora em qualquer nível
+**/.terraform/
+**/*.tfstate
+**/*.tfstate.*
+**/terraform.tfvars
+**/tfplan
+**/.terraform.lock.hcl
+**/crash.log
+**/crash.*.log
+**/override.tf
+**/override.tf.json
+**/*_override.tf
+**/*_override.tf.json
+
+terraform/modules/compute/jenkins-configuration.sh
+
+# Importante: NÃO ignorar terraform.lock.hcl no root do módulo
+!terraform/.terraform.lock.hcl
+
+# Python
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/.Python
+**/venv/
+**/env/
+**/.pytest_cache/
+
+# AWS
+**/*.pem
+**/*.key
+
+# IDE
+.vscode/
+.idea/
+**/*.swp
+**/*.swo
+
+# OS
+.DS_Store
+**/Thumbs.db
+
+# Logs
+**/*.log
+
+# Temporários
+**/*.tmp
+**/*.temp
+**/*.bak
