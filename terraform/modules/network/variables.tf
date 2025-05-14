@@ -14,10 +14,24 @@ variable "vpc_cidr" {
   default     = "10.0.0.0/16"
 }
 
-variable "public_subnet_cidr" {
-  description = "CIDR block para subnet pública"
+variable "public_subnet_1_cidr" {
+  description = "CIDR block para subnet pública 1"
   type        = string
-  default     = "10.0.1.0/24"
+}
+
+variable "public_subnet_2_cidr" {
+  description = "CIDR block para subnet pública 2"
+  type        = string
+}
+
+variable "private_subnet_1_cidr" {
+  description = "CIDR block para subnet privada 1"
+  type        = string
+}
+
+variable "private_subnet_2_cidr" {
+  description = "CIDR block para subnet privada 2"
+  type        = string
 }
 
 variable "availability_zone" {
@@ -42,3 +56,4 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+

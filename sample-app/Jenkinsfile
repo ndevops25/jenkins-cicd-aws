@@ -2,11 +2,15 @@ pipeline {
     agent any
     
     environment {
+        AWS_REGION = 'us-east-1'
+        ECR_REPOSITORY = '${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/jenkins-cicd-dev'
+        ECS_CLUSTER = 'jenkins-cicd-dev'
+        ECS_SERVICE = 'jenkins-cicd-dev'
         DOCKER_IMAGE = 'sample-app'
         DOCKER_TAG = "${BUILD_NUMBER}"
-        GITHUB_REPO = 'https://github.com/ndevops25/cp2-azure-jenkins.git'
-        GITHUB_CREDENTIALS = 'github-credentials'
-        APP_PORT = '5001'  // Nova porta conforme requisito
+        GITHUB_REPO = 'https://github.com/ndevops25/jenkins-cicd-aws.git'
+        GITHUB_CREDENTIALS = 'github-credentials'  // ID das credenciais no Jenkins
+        APP_PORT = '5001'
         APP_VERSION = "${BUILD_NUMBER}"
     }
     
@@ -44,63 +48,90 @@ pipeline {
             }
         }
         
-        stage('Test Docker Container') {
+        stage('Test Container') {
             steps {
                 script {
-                    // Executar container de teste
                     sh '''
                     docker run -d --name test-container \
                         -p ${APP_PORT}:${APP_PORT} \
                         -e PORT=${APP_PORT} \
                         -e APP_VERSION=${APP_VERSION} \
                         ${DOCKER_IMAGE}:${DOCKER_TAG}
-                    '''
                     
-                    // Aguardar container iniciar
-                    sh 'sleep 5'
+                    sleep 5
                     
-                    // Testar endpoints
-                    sh '''
-                    curl -f http://localhost:${APP_PORT}/
                     curl -f http://localhost:${APP_PORT}/health
-                    curl -f http://localhost:${APP_PORT}/info
-                    '''
                     
-                    // Parar e remover container de teste
-                    sh '''
                     docker stop test-container
                     docker rm test-container
                     '''
                 }
             }
         }
+
+        stage('Get Infrastructure Info') {
+            steps {
+                script {
+                    // Pegar informações do Terraform
+                    def ecrUrl = sh(
+                        script: "cd terraform && terraform output -raw ecr_repository_url",
+                        returnStdout: true
+                    ).trim()
+                    
+                    def ecsCluster = sh(
+                        script: "cd terraform && terraform output -raw ecs_cluster_name",
+                        returnStdout: true
+                    ).trim()
+                    
+                    env.ECR_REPOSITORY = ecrUrl
+                    env.ECS_CLUSTER = ecsCluster
+                }
+            }
+        }
         
-        stage('Deploy') {
+        stage('Push to ECR') {
+            steps {
+                script {
+                    // Login no ECR
+                    sh '''
+                    aws ecr get-login-password --region ${AWS_REGION} | \
+                    docker login --username AWS --password-stdin ${ECR_REPOSITORY}
+                    '''
+                    
+                    // Tag e push da imagem
+                    sh '''
+                    docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${ECR_REPOSITORY}:${DOCKER_TAG}
+                    docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${ECR_REPOSITORY}:latest
+                    
+                    docker push ${ECR_REPOSITORY}:${DOCKER_TAG}
+                    docker push ${ECR_REPOSITORY}:latest
+                    '''
+                }
+            }
+        }
+        
+        stage('Deploy to ECS') {
             when {
                 branch 'main'
             }
             steps {
                 script {
-                    // Parar container anterior se existir
+                    // Atualizar ECS Service para usar nova imagem
                     sh '''
-                    docker stop sample-app || true
-                    docker rm sample-app || true
+                    aws ecs update-service \
+                        --cluster ${ECS_CLUSTER} \
+                        --service ${ECS_SERVICE} \
+                        --force-new-deployment \
+                        --region ${AWS_REGION}
                     '''
                     
-                    // Executar novo container
+                    // Aguardar deploy
                     sh '''
-                    docker run -d --name sample-app \
-                        -p ${APP_PORT}:${APP_PORT} \
-                        -e PORT=${APP_PORT} \
-                        -e APP_VERSION=${APP_VERSION} \
-                        -e ENVIRONMENT=production \
-                        --restart unless-stopped \
-                        ${DOCKER_IMAGE}:${DOCKER_TAG}
+                    aws ecs wait services-stable \
+                        --cluster ${ECS_CLUSTER} \
+                        --services ${ECS_SERVICE} \
+                        --region ${AWS_REGION}
                     '''
-                    
-                    // Verificar se está rodando
-                    sh 'sleep 3'
-                    sh 'docker ps | grep sample-app'
                 }
             }
         }
@@ -108,18 +139,15 @@ pipeline {
     
     post {
         always {
-            // Limpar workspace
             cleanWs()
-            
-            // Limpar imagens antigas
             sh 'docker image prune -f || true'
         }
         success {
-            echo "Pipeline executado com sucesso! Versão ${APP_VERSION} implantada."
-            echo "Aplicação disponível em: http://localhost:${APP_PORT}"
+            echo "Deploy realizado com sucesso!"
+            echo "Versão ${APP_VERSION} implantada no ECS"
         }
         failure {
-            echo 'Pipeline falhou! Verifique os logs.'
+            echo 'Pipeline falhou!'
         }
     }
 }

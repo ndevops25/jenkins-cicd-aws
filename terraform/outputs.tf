@@ -37,3 +37,37 @@ output "instance_id" {
   description = "ID da instância EC2"
   value       = module.compute.instance_id
 }
+
+# ECS E ALB
+# Adicionar ao terraform/outputs.tf existente
+
+# Outputs do ECS
+output "ecs_cluster_name" {
+  description = "Nome do cluster ECS"
+  value       = module.ecs.cluster_name
+}
+
+output "ecs_service_name" {
+  description = "Nome do service ECS"
+  value       = module.ecs.service_name
+}
+
+output "alb_dns_name" {
+  description = "DNS do Application Load Balancer"
+  value       = module.ecs.alb_dns_name
+}
+
+output "application_url" {
+  description = "URL completa da aplicação"
+  value       = module.ecs.app_url
+}
+
+output "ecr_repository_url" {
+  description = "URL do repositório ECR"
+  value       = module.ecr.repository_url
+}
+
+output "ecs_task_definition_family" {
+  description = "Família da task definition para updates"
+  value       = module.ecs.task_definition_family
+}
