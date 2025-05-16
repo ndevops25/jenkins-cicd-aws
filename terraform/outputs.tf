@@ -13,6 +13,11 @@ output "ssh_connection" {
   value       = "ssh -i ~/.ssh/${var.key_name}.pem ubuntu@${module.elastic_ip.public_ip}"
 }
 
+output "elastic_ip" {
+  description = "Elastic IP do Jenkins"
+  value       = module.elastic_ip.public_ip
+}
+
 output "jenkins_initial_password" {
   description = "Comando para obter a senha inicial do Jenkins"
   value       = "sudo cat /var/lib/jenkins/secrets/initialAdminPassword"
