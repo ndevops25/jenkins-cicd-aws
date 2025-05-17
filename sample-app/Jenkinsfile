@@ -4,38 +4,36 @@ pipeline {
     environment {
         AWS_REGION = 'us-east-1'
         ECR_REPOSITORY = '047447425887.dkr.ecr.us-east-1.amazonaws.com/jenkins-cicd-dev'
-        ECS_CLUSTER = 'jenkins-cicd-dev'
-        ECS_SERVICE = 'jenkins-cicd-dev'
         DOCKER_IMAGE = 'sample-app'
         DOCKER_TAG = "${BUILD_NUMBER}"
-        GITHUB_CREDENTIALS = 'github-credentials'
         APP_PORT = '5001'
         APP_VERSION = "${BUILD_NUMBER}"
+        ECS_CLUSTER = 'jenkins-cicd-dev'
+        ECS_SERVICE = 'jenkins-cicd-dev'
     }
     
     stages {
-        stage('Environment Check') {
+        stage('Get AWS Credentials') {
             steps {
-                sh '''
-                echo "Verificando ambiente..."
-                python3 --version
-                which python3
-                docker --version || echo "Docker não encontrado!"
-                aws --version || echo "AWS CLI não encontrado!"
-                ls -la
-                '''
-            }
-        }
-        
-        stage('Checkout') {
-            steps {
-                checkout scm
-            }
-        }
-        
-        stage('Skip Tests') {
-            steps {
-                echo "Pulando testes Python devido a problemas de compatibilidade"
+                script {
+                    sh '''
+                    # Obter credenciais temporárias
+                    CREDENTIALS=$(curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/jenkins-cicd-dev-jenkins-ec2)
+                    
+                    # Extrair e exportar
+                    export AWS_ACCESS_KEY_ID=$(echo $CREDENTIALS | grep -o '"AccessKeyId" : "[^"]*"' | cut -d'"' -f4)
+                    export AWS_SECRET_ACCESS_KEY=$(echo $CREDENTIALS | grep -o '"SecretAccessKey" : "[^"]*"' | cut -d'"' -f4)
+                    export AWS_SESSION_TOKEN=$(echo $CREDENTIALS | grep -o '"Token" : "[^"]*"' | cut -d'"' -f4)
+                    
+                    # Verificar
+                    aws sts get-caller-identity
+                    
+                    # Salvar para outros estágios
+                    echo "AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID" > aws-credentials.env
+                    echo "AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY" >> aws-credentials.env
+                    echo "AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN" >> aws-credentials.env
+                    '''
+                }
             }
         }
         
@@ -43,7 +41,6 @@ pipeline {
             steps {
                 dir('sample-app') {
                     sh '''
-                    # Usar docker sem sudo
                     docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} \
                         --build-arg PORT=${APP_PORT} \
                         --build-arg VERSION=${APP_VERSION} .
@@ -56,22 +53,17 @@ pipeline {
             steps {
                 script {
                     sh '''
-                    # Executar container
                     docker run -d --name test-container-${BUILD_NUMBER} \
                         -p ${APP_PORT}:${APP_PORT} \
                         -e PORT=${APP_PORT} \
                         -e APP_VERSION=${APP_VERSION} \
-                        ${DOCKER_IMAGE}:${DOCKER_TAG} || echo "Falha ao executar container"
+                        ${DOCKER_IMAGE}:${DOCKER_TAG}
                     
-                    # Aguardar inicialização
-                    sleep 10
+                    sleep 5
+                    curl -f http://localhost:${APP_PORT}/health || echo "Falha no teste"
                     
-                    # Testar endpoint
-                    curl -f http://localhost:${APP_PORT}/health || echo "Falha no teste de health"
-                    
-                    # Limpar
-                    docker stop test-container-${BUILD_NUMBER} || true
-                    docker rm test-container-${BUILD_NUMBER} || true
+                    docker stop test-container-${BUILD_NUMBER}
+                    docker rm test-container-${BUILD_NUMBER}
                     '''
                 }
             }
@@ -79,46 +71,49 @@ pipeline {
         
         stage('Push to ECR') {
             steps {
-                script {
-                    sh '''
-                    # Login no ECR
-                    aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REPOSITORY%/*}
-                    
-                    # Tag e push
-                    docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${ECR_REPOSITORY}:${DOCKER_TAG}
-                    docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${ECR_REPOSITORY}:latest
-                    
-                    docker push ${ECR_REPOSITORY}:${DOCKER_TAG}
-                    docker push ${ECR_REPOSITORY}:latest
-                    '''
-                }
+                sh '''
+                # Carregar credenciais
+                source aws-credentials.env
+                
+                # Login no ECR
+                aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REPOSITORY%/*}
+                
+                # Tag e push
+                docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${ECR_REPOSITORY}:${DOCKER_TAG}
+                docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${ECR_REPOSITORY}:latest
+                
+                docker push ${ECR_REPOSITORY}:${DOCKER_TAG}
+                docker push ${ECR_REPOSITORY}:latest
+                '''
             }
         }
         
         stage('Deploy to ECS') {
             steps {
-                script {
-                    sh '''
-                    # Atualizar serviço ECS
-                    aws ecs update-service \
-                        --cluster ${ECS_CLUSTER} \
-                        --service ${ECS_SERVICE} \
-                        --force-new-deployment \
-                        --region ${AWS_REGION}
-                    
-                    # Aguardar deploy
-                    aws ecs wait services-stable \
-                        --cluster ${ECS_CLUSTER} \
-                        --services ${ECS_SERVICE} \
-                        --region ${AWS_REGION}
-                    '''
-                }
+                sh '''
+                # Carregar credenciais
+                source aws-credentials.env
+                
+                # Atualizar serviço ECS
+                aws ecs update-service \
+                    --cluster ${ECS_CLUSTER} \
+                    --service ${ECS_SERVICE} \
+                    --force-new-deployment \
+                    --region ${AWS_REGION}
+                
+                # Aguardar deploy
+                aws ecs wait services-stable \
+                    --cluster ${ECS_CLUSTER} \
+                    --services ${ECS_SERVICE} \
+                    --region ${AWS_REGION}
+                '''
             }
         }
     }
     
     post {
         always {
+            sh 'rm -f aws-credentials.env'
             cleanWs()
             sh 'docker image prune -f || true'
         }

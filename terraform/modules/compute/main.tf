@@ -46,7 +46,9 @@ resource "aws_instance" "jenkins" {
   key_name               = var.key_name
   vpc_security_group_ids = var.security_group_ids
   subnet_id              = var.subnet_id
-  user_data              = file("${path.module}/jenkins-configuration.sh")
+  user_data              = file("${path.module}/compute.sh")
+
+  iam_instance_profile = aws_iam_instance_profile.jenkins.name
 
   root_block_device {
     volume_size = var.volume_size
