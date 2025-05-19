@@ -254,10 +254,10 @@ O SonarQube está disponível em <http://35.171.200.117:9000> com as seguintes c
     -   Selecionar "Instalar automaticamente"
 
 - Para baixar a extensão, vá para "Extensões Disponíveis":
-![Configuração do SonarQube Scanner](docs/images/sonarqube-scanner-plugin.png)
+![Configuração do SonarQube Scanner Plugin](docs/images/sonarqube-scanner-plugin.png)
 
 - Configuração do SonarQube Scanner com o plugin instalado na plataforma Jenkins:
-![Configuração do SonarQube Scanner](docs/images/sonarqube-scanner-config.png)
+![Configuração do SonarQube Scanner Config](docs/images/sonarqube-scanner-config.png)
 
 ### 4\. Configuração do Projeto no SonarQube
 
@@ -328,10 +328,10 @@ Para executar o pipeline, você pode:
 Após a execução do pipeline, é possível visualizar os resultados da análise de código no SonarQube:
 
 - Dashboard de Qualidade de Software na plataforma do SonarQube:
-![Jenkins Pipeline](docs/images/sonarqube-dashboard.png)
+![SonarQube Dashboard](docs/images/sonarqube-dashboard.png)
 
 - Pressione a linha de informações para ver os detalhes da inspeção de qualidade:
-![Jenkins Pipeline](docs/images/sonarqube-dashboard-details.png)
+![SonarQube Details Dashboard](docs/images/sonarqube-dashboard-details.png)
 
 Os resultados atuais mostram:
 
