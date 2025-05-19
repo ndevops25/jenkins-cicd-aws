@@ -40,37 +40,86 @@ pipeline {
         stage('Code Analysis') {
             steps {
                 echo "Executando análise de código com SonarQube..."
-                withSonarQubeEnv('SonarQube') {
+                withSonarQubeEnv('SonarQube') {  // Isso configura as variáveis de ambiente do SonarQube
                     dir('sample-app') {
-                        withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+                        script {
+                            // Primeiro, vamos fazer download e descompactar o SonarScanner no workspace
+                            sh '''
+                            # Verificar e criar diretório para o scanner
+                            mkdir -p ${WORKSPACE}/sonar-scanner
+                            
+                            # Baixar o SonarScanner
+                            echo "Baixando SonarScanner..."
+                            curl -L -o ${WORKSPACE}/sonar-scanner-cli.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.8.0.2856-linux.zip
+                            
+                            # Descompactar
+                            unzip -q -o ${WORKSPACE}/sonar-scanner-cli.zip -d ${WORKSPACE}/sonar-scanner
+                            
+                            # Tornar o binário executável
+                            chmod +x ${WORKSPACE}/sonar-scanner/sonar-scanner-*/bin/sonar-scanner
+                            
+                            # Verificar a instalação
+                            ls -la ${WORKSPACE}/sonar-scanner/sonar-scanner-*/bin/
+                            '''
+                            
+                            // Criar o arquivo de propriedades do SonarQube
                             sh '''
                             # Criar arquivo sonar-project.properties
                             cat > sonar-project.properties << EOL
-                                # Identificação do projeto
-                                sonar.projectKey=sample-app
-                                sonar.projectName=Sample App
-                                sonar.projectVersion=${APP_VERSION}
-                                sonar.host.url=http://35.171.200.117:9000
-                                sonar.login=${SONAR_TOKEN}
+                            # Identificação do projeto
+                            sonar.projectKey=sample-app
+                            sonar.projectName=Sample App
+                            sonar.projectVersion=${APP_VERSION}
 
-                                # Caminho para os arquivos de código
-                                sonar.sources=.
-                                sonar.python.coverage.reportPaths=coverage.xml
-                                sonar.python.xunit.reportPath=test-results.xml
+                            # Configurações do servidor
+                            sonar.host.url=http://35.171.200.117:9000
 
-                                # Codificação do código-fonte
-                                sonar.sourceEncoding=UTF-8
+                            # Caminho para os arquivos de código
+                            sonar.sources=.
+                            sonar.python.coverage.reportPaths=coverage.xml
+                            sonar.python.xunit.reportPath=test-results.xml
+
+                            # Codificação do código-fonte
+                            sonar.sourceEncoding=UTF-8
                             EOL
-                            
-                            # Executar SonarScanner usando container Docker com rede do host
-                            echo "Executando SonarScanner via Docker..."
-                            docker run --rm \
-                            --network=host \
-                            -e SONAR_HOST_URL=http://35.171.200.117:9000 \
-                            -e SONAR_LOGIN=${SONAR_TOKEN} \
-                            -v "$(pwd):/usr/src" \
-                            sonarsource/sonar-scanner-cli:latest
                             '''
+                            
+                            // Executar o SonarScanner com o token
+                            withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+                                sh '''
+                                # Exibir o diretório atual e listar arquivos
+                                pwd
+                                ls -la
+                                
+                                # Exibir o arquivo de propriedades
+                                echo "Conteúdo do arquivo sonar-project.properties:"
+                                cat sonar-project.properties
+                                
+                                # Executar o SonarScanner
+                                echo "Executando SonarScanner..."
+                                ${WORKSPACE}/sonar-scanner/sonar-scanner-*/bin/sonar-scanner \
+                                -Dsonar.login=${SONAR_TOKEN} \
+                                -Dsonar.projectBaseDir=$(pwd) \
+                                -Dsonar.verbose=true
+                                
+                                # Verificar se o relatório foi gerado
+                                echo "Verificando se o arquivo report-task.txt foi gerado:"
+                                find . -name report-task.txt
+                                find .scannerwork -name "report-task.txt" || echo "Arquivo não encontrado em .scannerwork"
+                                
+                                # Se encontrado, copiar para o diretório raiz do workspace
+                                if [ -f .scannerwork/report-task.txt ]; then
+                                    echo "Copiando report-task.txt para o diretório raiz..."
+                                    cp .scannerwork/report-task.txt .
+                                fi
+                                
+                                # Mostrar o conteúdo do relatório se existir
+                                if [ -f report-task.txt ]; then
+                                    echo "Conteúdo do arquivo report-task.txt:"
+                                    cat report-task.txt
+                                fi
+                                '''
+                            }
                         }
                     }
                 }
