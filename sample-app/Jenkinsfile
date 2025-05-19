@@ -12,121 +12,91 @@ pipeline {
         ECS_SERVICE = 'jenkins-cicd-dev'
         SONAR_SERVER = 'http://35.171.200.117:9000'
         SONAR_PROJECT = 'sample-app'
-        HOME = "${WORKSPACE}" // Define HOME para o workspace para garantir permissões
+        HOME = "${WORKSPACE}"
     }
     
     stages {
-        stage('Setup AWS CLI') {
+        stage('Setup AWS Config') {
             steps {
-                script {
-                    echo "Iniciando instalação do AWS CLI..."
+                echo "Configurando AWS CLI..."
+                // Limpar configurações anteriores
+                sh 'rm -f ${WORKSPACE}/.aws/credentials ${WORKSPACE}/.aws/config 2>/dev/null || true'
+                sh 'mkdir -p ${WORKSPACE}/.aws'
+                
+                // Criar arquivo de configuração AWS
+                sh """
+                cat > ${WORKSPACE}/.aws/config << EOL
+                [default]
+                    region = ${AWS_REGION}
+                    output = json
+                EOL
+                """
+                
+                // Verificar instalação do AWS CLI
+                sh 'aws --version'
+            }
+        }
+
+        stage('Setup AWS Credentials') {
+            steps {
+                echo "Configurando credenciais AWS..."
+                withCredentials([
+                    string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY'),
+                    string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_KEY')
+                ]) {
+                    // Exportar variáveis de ambiente
+                    sh """
+                    # Criar arquivo de credenciais AWS
+                    cat > ${WORKSPACE}/.aws/credentials << EOL
+                    [default]
+                        aws_access_key_id = ${AWS_ACCESS_KEY}
+                        aws_secret_access_key = ${AWS_SECRET_KEY}
+                    EOL
+                    
+                    # Criar script para uso em outros estágios
+                    cat > ${WORKSPACE}/aws-env.sh << EOL
+                        export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY}
+                        export AWS_SECRET_ACCESS_KEY=${AWS_SECRET_KEY}
+                        export AWS_DEFAULT_REGION=${AWS_REGION}
+                    EOL
+                    chmod +x ${WORKSPACE}/aws-env.sh
+                    """
+                    
+                    // Testar credenciais
                     sh '''
-                    # Limpar área de trabalho de instalações anteriores
-                    rm -rf ${WORKSPACE}/aws-cli-local ${WORKSPACE}/awscliv2.zip ${WORKSPACE}/aws 2>/dev/null || true
+                    # Verificar credenciais com AWS CLI
+                    export AWS_CONFIG_FILE=${WORKSPACE}/.aws/config
+                    export AWS_SHARED_CREDENTIALS_FILE=${WORKSPACE}/.aws/credentials
                     
-                    # Criar diretório e definir permissões
-                    mkdir -p ${WORKSPACE}/aws-cli-local
-                    chmod 755 ${WORKSPACE}/aws-cli-local
+                    # Teste básico
+                    aws sts get-caller-identity
                     
-                    # Baixar e verificar se o download funcionou
-                    curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-                    if [ ! -f awscliv2.zip ] || [ ! -s awscliv2.zip ]; then
-                        echo "ERRO: Download do AWS CLI falhou"
-                        exit 1
-                    fi
-                    
-                    # Descompactar com verificação
-                    unzip -o awscliv2.zip
-                    if [ ! -d aws ]; then
-                        echo "ERRO: Descompactação do AWS CLI falhou"
-                        exit 1
-                    fi
-                    
-                    # Instalar com logs detalhados
-                    ./aws/install -i ${WORKSPACE}/aws-cli-local -b ${WORKSPACE}/aws-cli-local/bin
-                    
-                    # Verificar instalação
-                    export PATH=${WORKSPACE}/aws-cli-local/bin:$PATH
-                    aws --version
                     if [ $? -ne 0 ]; then
-                        echo "ERRO: Instalação do AWS CLI falhou"
+                        echo "ERRO: Credenciais AWS inválidas"
                         exit 1
+                    else
+                        echo "Credenciais AWS configuradas com sucesso!"
                     fi
-                    
-                    # Salvar caminho para uso posterior
-                    echo "export PATH=${WORKSPACE}/aws-cli-local/bin:$PATH" > ${WORKSPACE}/aws-path.sh
-                    chmod +x ${WORKSPACE}/aws-path.sh
                     '''
                 }
             }
         }
         
-        stage('Setup AWS Credentials') {
+        stage('Setup AWS CLI Environment') {
             steps {
-                script {
-                    echo "Configurando credenciais AWS..."
-                    withCredentials([
-                        string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY'),
-                        string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET'),
-                        string(credentialsId: 'aws-session-token', variable: 'AWS_TOKEN')
-                    ]) {
-                        // Tente usar credenciais Jenkins primeiro
-                        sh '''
-                        echo "Tentando usar credenciais do Jenkins..."
-                        echo "export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY" > ${WORKSPACE}/aws-creds.sh
-                        echo "export AWS_SECRET_ACCESS_KEY=$AWS_SECRET" >> ${WORKSPACE}/aws-creds.sh
-                        echo "export AWS_SESSION_TOKEN=$AWS_TOKEN" >> ${WORKSPACE}/aws-creds.sh
-                        chmod +x ${WORKSPACE}/aws-creds.sh
-                        '''
-                    }
-                    
-                    // Se credenciais Jenkins não existirem, tentar metadados EC2
-                    sh '''
-                    # Se não houver credenciais válidas, tentar obter dos metadados EC2
-                    source ${WORKSPACE}/aws-path.sh
-                    source ${WORKSPACE}/aws-creds.sh
-                    
-                    aws sts get-caller-identity
-                    if [ $? -ne 0 ]; then
-                        echo "Credenciais do Jenkins inválidas, tentando metadados EC2..."
-                        
-                        # Verificar se podemos acessar o serviço de metadados
-                        curl -s --connect-timeout 5 http://169.254.169.254/latest/meta-data/ >/dev/null
-                        if [ $? -ne 0 ]; then
-                            echo "AVISO: Não foi possível acessar o serviço de metadados EC2"
-                            echo "Se esta instância não está no EC2, configure as credenciais AWS no Jenkins"
-                            exit 1
-                        fi
-                        
-                        # Obter o nome do perfil de instância
-                        INSTANCE_PROFILE=$(curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/)
-                        if [ -z "$INSTANCE_PROFILE" ]; then
-                            echo "ERRO: Perfil de instância não encontrado"
-                            exit 1
-                        fi
-                        
-                        # Obter credenciais temporárias
-                        CREDS=$(curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/$INSTANCE_PROFILE)
-                        export AWS_ACCESS_KEY_ID=$(echo $CREDS | grep -o '"AccessKeyId" : "[^"]*"' | cut -d'"' -f4)
-                        export AWS_SECRET_ACCESS_KEY=$(echo $CREDS | grep -o '"SecretAccessKey" : "[^"]*"' | cut -d'"' -f4)
-                        export AWS_SESSION_TOKEN=$(echo $CREDS | grep -o '"Token" : "[^"]*"' | cut -d'"' -f4)
-                        
-                        # Salvar para uso posterior
-                        echo "export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID" > ${WORKSPACE}/aws-creds.sh
-                        echo "export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY" >> ${WORKSPACE}/aws-creds.sh
-                        echo "export AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN" >> ${WORKSPACE}/aws-creds.sh
-                        chmod +x ${WORKSPACE}/aws-creds.sh
-                        
-                        # Verificar se conseguimos credenciais válidas
-                        source ${WORKSPACE}/aws-path.sh
-                        aws sts get-caller-identity
-                        if [ $? -ne 0 ]; then
-                            echo "ERRO: Não foi possível obter credenciais AWS válidas"
-                            exit 1
-                        fi
-                    fi
-                    '''
-                }
+                sh '''
+                # Criar script para usar em todos os outros estágios
+                cat > ${WORKSPACE}/aws-config.sh << EOL
+                    export AWS_CONFIG_FILE=${WORKSPACE}/.aws/config
+                    export AWS_SHARED_CREDENTIALS_FILE=${WORKSPACE}/.aws/credentials
+                    export AWS_DEFAULT_REGION=${AWS_REGION}
+                    EOL
+                chmod +x ${WORKSPACE}/aws-config.sh
+                
+                # Testar configuração
+                source ${WORKSPACE}/aws-config.sh
+                aws configure list
+                '''
             }
         }
         
@@ -221,61 +191,52 @@ pipeline {
         
         stage('Push to ECR') {
             steps {
-                script {
-                    echo "Enviando imagem para ECR..."
-                    sh '''
-                    # Carregar credenciais e path do AWS CLI
-                    source ${WORKSPACE}/aws-creds.sh
-                    source ${WORKSPACE}/aws-path.sh
-                    
-                    # Verificar AWS CLI
-                    aws --version
-                    
-                    # Verificar autenticação
-                    aws sts get-caller-identity
-                    
-                    echo "Fazendo login no ECR..."
-                    # Login no ECR
-                    aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REPOSITORY%/*}
-                    
-                    echo "Marcando e enviando imagem..."
-                    # Tag e push
-                    docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${ECR_REPOSITORY}:${DOCKER_TAG}
-                    docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${ECR_REPOSITORY}:latest
-                    
-                    docker push ${ECR_REPOSITORY}:${DOCKER_TAG}
-                    docker push ${ECR_REPOSITORY}:latest
-                    '''
-                }
+                echo "Enviando imagem para ECR..."
+                sh '''
+                # Carregar configuração AWS
+                source ${WORKSPACE}/aws-config.sh
+                
+                # Login no ECR
+                echo "Fazendo login no ECR..."
+                aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REPOSITORY%/*}
+                
+                echo "Marcando e enviando imagem..."
+                # Tag e push
+                docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${ECR_REPOSITORY}:${DOCKER_TAG}
+                docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${ECR_REPOSITORY}:latest
+                
+                docker push ${ECR_REPOSITORY}:${DOCKER_TAG} || (echo "Falha ao enviar imagem para ECR" && exit 1)
+                docker push ${ECR_REPOSITORY}:latest || (echo "Falha ao enviar tag latest para ECR" && exit 1)
+                
+                echo "Imagem enviada com sucesso para o ECR!"
+                '''
             }
         }
         
         stage('Deploy to ECS') {
             steps {
-                script {
-                    echo "Implantando no ECS..."
-                    sh '''
-                    # Carregar credenciais e path do AWS CLI
-                    source ${WORKSPACE}/aws-creds.sh
-                    source ${WORKSPACE}/aws-path.sh
-                    
-                    echo "Atualizando serviço ECS: ${ECS_SERVICE} no cluster ${ECS_CLUSTER}"
-                    # Atualizar serviço ECS
-                    aws ecs update-service \
-                        --cluster ${ECS_CLUSTER} \
-                        --service ${ECS_SERVICE} \
-                        --force-new-deployment \
-                        --region ${AWS_REGION}
-                    
-                    echo "Aguardando estabilização do serviço..."
-                    # Aguardar deploy
-                    aws ecs wait services-stable \
-                        --cluster ${ECS_CLUSTER} \
-                        --services ${ECS_SERVICE} \
-                        --region ${AWS_REGION} \
-                        --max-attempts 20 || echo "Tempo excedido aguardando estabilidade do ECS"
-                    '''
-                }
+                echo "Implantando no ECS..."
+                sh '''
+                # Carregar configuração AWS
+                source ${WORKSPACE}/aws-config.sh
+                
+                echo "Atualizando serviço ECS: ${ECS_SERVICE} no cluster ${ECS_CLUSTER}"
+                # Atualizar serviço ECS
+                aws ecs update-service \
+                    --cluster ${ECS_CLUSTER} \
+                    --service ${ECS_SERVICE} \
+                    --force-new-deployment \
+                    --region ${AWS_REGION}
+                
+                echo "Aguardando estabilização do serviço ECS..."
+                # Aguardar deploy
+                aws ecs wait services-stable \
+                    --cluster ${ECS_CLUSTER} \
+                    --services ${ECS_SERVICE} \
+                    --region ${AWS_REGION} || echo "Tempo excedido aguardando estabilidade do ECS"
+                
+                echo "Implantação concluída!"
+                '''
             }
         }
     }
