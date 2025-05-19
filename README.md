@@ -317,10 +317,10 @@ Para executar o pipeline, você pode:
 2.  Clicar em "Build Now"
 3.  Acompanhar a execução nos logs ou na visualização de estágios
 
-![Jenkins Pipeline](docs/images/pipeline-running.png)
+![Jenkins Pipeline in platform](docs/images/pipeline-running.png)
 
 - Pipeline executado:
-![Jenkins Pipeline](docs/images/jenkins-pipeline-with-sonarqube.png)
+![Jenkins Pipeline Executed with SonarQube](docs/images/jenkins-pipeline-with-sonarqube.png)
 
 🔍 Resultados da Análise de Código
 ----------------------------------
