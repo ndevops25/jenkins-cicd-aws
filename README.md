@@ -317,7 +317,6 @@ Para executar o pipeline, você pode:
 2.  Clicar em "Build Now"
 3.  Acompanhar a execução nos logs ou na visualização de estágios
 
-![Jenkins Pipeline in platform](images/pipeline-running.png)
 <img src="/docs/images/pipeline-running.png" alt="Jenkins Pipeline in platform">
 
 - Pipeline executado:
