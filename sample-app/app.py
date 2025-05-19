@@ -8,7 +8,7 @@ app = Flask(__name__)
 
 # Porta configurável via variável de ambiente
 PORT = int(os.environ.get('PORT', 5000))
-VERSION = os.environ.get('APP_VERSION', '1.0.0')
+VERSION = os.environ.get('APP_VERSION', '1.24')
 
 # Template HTML para uma interface mais amigável
 HTML_TEMPLATE = '''
@@ -17,7 +17,7 @@ HTML_TEMPLATE = '''
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sample App Dashboard</title>
+    <title>Thunderbolts Sample App Dashboard</title>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;

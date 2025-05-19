@@ -210,7 +210,7 @@ pipeline {
         }
         success {
             echo "Pipeline executado com sucesso! Versão ${APP_VERSION} implantada."
-            echo "Aplicação disponível em: http://jenkins-cicd-dev-alb-2039113869.us-east-1.elb.amazonaws.com"
+            echo "Aplicação disponível em: http://jenkins-cicd-dev-alb-2039113869.us-east-1.elb.amazonaws.com/"
         }
         failure {
             echo "Pipeline falhou! Verifique os logs acima para detalhes."
