@@ -482,4 +482,4 @@ Este projeto está sob a licença MIT. Veja o arquivo `LICENSE` para mais detalh
 
 * * * * *
 
-**Nota**: Este projeto foi desenvolvido como parte do trabalho CP2 - Construção de um Pipeline CI/CD usando Jenkins.
+**Nota**: Este projeto foi desenvolvido como parte do trabalho CP2 e CP3 - Construção de um Pipeline CI/CD usando Jenkins e SonarQube.
