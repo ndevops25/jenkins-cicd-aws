@@ -3,7 +3,7 @@ Pipeline CI/CD com Jenkins, SonarQube, ECR e ECS 🚀
 
 Este projeto implementa um pipeline completo de CI/CD usando Jenkins para uma aplicação Python Flask, com deploy automatizado na AWS utilizando Docker, ECR (Elastic Container Registry) e ECS (Elastic Container Service). Inclui análise de código com SonarQube para manter a qualidade do código.
 
-![Jenkins Pipeline](images/pipeline-running.png)
+<img src="/docs/images/pipeline-running.png" alt="Jenkins Pipeline">
 
 📋 Índice
 ---------
@@ -222,7 +222,7 @@ ssh -i ~/.ssh/jenkins-key-dev.pem ubuntu@<IP>\
     -   ID: `sonar-token`
     -   Secret: token-gerado-no-sonarqube
 
-![Configuração do Token no SonarQube](images/sonarqube-token.png)
+<img src="/docs/images/sonarqube-token.png" alt="Configuração do Token no SonarQube">
 
 📊 Configuração do SonarQube
 ----------------------------
@@ -243,7 +243,7 @@ O SonarQube está disponível em <http://35.171.200.117:9000> com as seguintes c
     -   URL do servidor: <http://35.171.200.117:9000>
     -   Token de autenticação: Selecionar credencial `sonar-token`
 
-![Configuração do SonarQube Scanner](images/sonarqube-jenkins-config.png)
+<img src="/docs/images/sonarqube-jenkins-config.png" alt="Configuração do SonarQube Scanner">
 
 ### 3\. Configuração do SonarQube Scanner
 
@@ -254,10 +254,10 @@ O SonarQube está disponível em <http://35.171.200.117:9000> com as seguintes c
     -   Selecionar "Instalar automaticamente"
 
 - Para baixar a extensão, vá para "Extensões Disponíveis":
-![Configuração do SonarQube Scanner Plugin](images/sonarqube-scanner-plugin.png)
+<img src="/docs/images/sonarqube-scanner-plugin.png" alt="Configuração do SonarQube Scanner Plugin">
 
 - Configuração do SonarQube Scanner com o plugin instalado na plataforma Jenkins:
-![Configuração do SonarQube Scanner Config](images/sonarqube-scanner-config.png)
+<img src="/docs/images/sonarqube-scanner-config.png" alt="Configuração do SonarQube Scanner Config">
 
 ### 4\. Configuração do Projeto no SonarQube
 
@@ -318,9 +318,10 @@ Para executar o pipeline, você pode:
 3.  Acompanhar a execução nos logs ou na visualização de estágios
 
 ![Jenkins Pipeline in platform](images/pipeline-running.png)
+<img src="/docs/images/pipeline-running.png" alt="Jenkins Pipeline in platform">
 
 - Pipeline executado:
-![Jenkins Pipeline Executed with SonarQube](images/jenkins-pipeline-with-sonarqube.png)
+<img src="/docs/images/jenkins-pipeline-with-sonarqube.png" alt="Jenkins Pipeline Executed with SonarQube">
 
 🔍 Resultados da Análise de Código
 ----------------------------------
@@ -328,10 +329,10 @@ Para executar o pipeline, você pode:
 Após a execução do pipeline, é possível visualizar os resultados da análise de código no SonarQube:
 
 - Dashboard de Qualidade de Software na plataforma do SonarQube:
-![SonarQube Dashboard](images/sonarqube-dashboard.png)
+<img src="/docs/images/sonarqube-dashboard.png" alt="SonarQube Dashboard">
 
 - Pressione a linha de informações para ver os detalhes da inspeção de qualidade:
-![SonarQube Details Dashboard](images/sonarqube-dashboard-details.png)
+<img src="/docs/images/sonarqube-dashboard-details.png" alt="SonarQube Details Dashboard">
 
 Os resultados atuais mostram:
 
