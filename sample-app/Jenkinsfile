@@ -47,8 +47,8 @@ pipeline {
                     """
                     
                     // Testar o script
-                    sh "${WORKSPACE}/aws-cli.sh --version"
-                    sh "${WORKSPACE}/aws-cli.sh sts get-caller-identity || (echo 'Falha na configuração AWS' && exit 1)"
+                    sh "sudo ${WORKSPACE}/aws-cli.sh --version"
+                    sh "sudo ${WORKSPACE}/aws-cli.sh sts get-caller-identity || (echo 'Falha na configuração AWS' && exit 1)"
                 }
             }
         }
