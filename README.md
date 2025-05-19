@@ -181,17 +181,106 @@ pipeline {
     
     environment {
         AWS_REGION = 'us-east-1'
-        ECR_REPOSITORY = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/app"
+        ECR_REPOSITORY = '047447425887.dkr.ecr.us-east-1.amazonaws.com/jenkins-cicd-dev'
+        DOCKER_IMAGE = 'sample-app'
+        DOCKER_TAG = "${BUILD_NUMBER}"
+        APP_PORT = '5001'
+        APP_VERSION = "${BUILD_NUMBER}"
         ECS_CLUSTER = 'jenkins-cicd-dev'
         ECS_SERVICE = 'jenkins-cicd-dev'
     }
     
     stages {
-        stage('Checkout')
-        stage('Test')
-        stage('Build')
-        stage('Push to ECR')
-        stage('Deploy to ECS')
+        stage('Build and Test') {
+            steps {
+                dir('sample-app') {
+                    sh '''
+                    # Build imagem
+                    docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} \
+                        --build-arg PORT=${APP_PORT} \
+                        --build-arg VERSION=${APP_VERSION} .
+                    
+                    # Teste container
+                    docker run -d --name test-container-${BUILD_NUMBER} \
+                        -p ${APP_PORT}:${APP_PORT} \
+                        -e PORT=${APP_PORT} \
+                        -e APP_VERSION=${APP_VERSION} \
+                        ${DOCKER_IMAGE}:${DOCKER_TAG}
+                    
+                    sleep 5
+                    curl -f http://localhost:${APP_PORT}/health || echo "Falha no teste"
+                    
+                    docker stop test-container-${BUILD_NUMBER}
+                    docker rm test-container-${BUILD_NUMBER}
+                    '''
+                }
+            }
+        }
+        
+        stage('Push to ECR') {
+            steps {
+                sh '''#!/bin/bash
+                # Obter credenciais temporárias
+                CREDENTIALS=$(curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/jenkins-cicd-dev-jenkins-ec2)
+                
+                # Extrair e exportar
+                export AWS_ACCESS_KEY_ID=$(echo $CREDENTIALS | grep -o '"AccessKeyId" : "[^"]*"' | cut -d'"' -f4)
+                export AWS_SECRET_ACCESS_KEY=$(echo $CREDENTIALS | grep -o '"SecretAccessKey" : "[^"]*"' | cut -d'"' -f4)
+                export AWS_SESSION_TOKEN=$(echo $CREDENTIALS | grep -o '"Token" : "[^"]*"' | cut -d'"' -f4)
+                
+                # Login no ECR
+                aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REPOSITORY%/*}
+                
+                # Tag e push
+                docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${ECR_REPOSITORY}:${DOCKER_TAG}
+                docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${ECR_REPOSITORY}:latest
+                
+                docker push ${ECR_REPOSITORY}:${DOCKER_TAG}
+                docker push ${ECR_REPOSITORY}:latest
+                '''
+            }
+        }
+        
+        stage('Deploy to ECS') {
+            steps {
+                sh '''#!/bin/bash
+                # Obter credenciais temporárias
+                CREDENTIALS=$(curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/jenkins-cicd-dev-jenkins-ec2)
+                
+                # Extrair e exportar
+                export AWS_ACCESS_KEY_ID=$(echo $CREDENTIALS | grep -o '"AccessKeyId" : "[^"]*"' | cut -d'"' -f4)
+                export AWS_SECRET_ACCESS_KEY=$(echo $CREDENTIALS | grep -o '"SecretAccessKey" : "[^"]*"' | cut -d'"' -f4)
+                export AWS_SESSION_TOKEN=$(echo $CREDENTIALS | grep -o '"Token" : "[^"]*"' | cut -d'"' -f4)
+                
+                # Atualizar serviço ECS
+                aws ecs update-service \
+                    --cluster ${ECS_CLUSTER} \
+                    --service ${ECS_SERVICE} \
+                    --force-new-deployment \
+                    --region ${AWS_REGION}
+                
+                # Aguardar deploy
+                aws ecs wait services-stable \
+                    --cluster ${ECS_CLUSTER} \
+                    --services ${ECS_SERVICE} \
+                    --region ${AWS_REGION}
+                '''
+            }
+        }
+    }
+    
+    post {
+        always {
+            cleanWs()
+            sh 'docker image prune -f || true'
+        }
+        success {
+            echo "Pipeline executado com sucesso! Versão ${APP_VERSION} implantada."
+            echo "Aplicação disponível em: http://jenkins-cicd-dev-alb-2039113869.us-east-1.elb.amazonaws.com"
+        }
+        failure {
+            echo 'Pipeline falhou! Verifique os logs.'
+        }
     }
 }
 ```

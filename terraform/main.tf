@@ -33,9 +33,11 @@ module "compute" {
   project_name       = var.project_name
   environment        = var.environment
   instance_type      = var.instance_type
-  key_name           = var.key_name
+  jenkins_key_name   = var.jenkins_key_name
+  sonarqube_key_name = var.sonarqube_key_name
   subnet_id          = module.network.public_subnet_id
-  security_group_ids = [module.security.security_group_id]
+  jenkins_security_group_ids = [module.security.jenkins_security_group_id]
+  sonarqube_security_group_ids = [module.security.sonarqube_security_group_id]
   volume_size        = var.volume_size
   tags               = local.common_tags
 }
@@ -46,7 +48,8 @@ module "elastic_ip" {
 
   project_name = var.project_name
   environment  = var.environment
-  instance_id  = module.compute.instance_id
+  jenkins_instance_id  = module.compute.jenkins_instance_id
+  sonarqube_instance_id = module.compute.sonarqube_instance_id
   tags         = local.common_tags
 }
 

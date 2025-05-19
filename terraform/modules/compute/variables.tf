@@ -14,19 +14,19 @@ variable "instance_type" {
   default     = "t2.medium"
 }
 
-variable "key_name" {
-  description = "Nome da chave SSH"
+variable "jenkins_key_name" {
+  description = "Nome da chave Jenkins SSH"
+  type        = string
+}
+
+variable "sonarqube_key_name" {
+  description = "Nome da chave SonarQube SSH"
   type        = string
 }
 
 variable "subnet_id" {
   description = "ID da subnet"
   type        = string
-}
-
-variable "security_group_ids" {
-  description = "IDs dos Security Groups"
-  type        = list(string)
 }
 
 variable "volume_size" {
@@ -45,4 +45,14 @@ variable "tags" {
   description = "Tags para recursos"
   type        = map(string)
   default     = {}
+}
+
+variable "jenkins_security_group_ids" {
+  description = "IDs dos Jenkins Security Groups"
+  type        = list(string)
+}
+
+variable "sonarqube_security_group_ids" {
+  description = "IDs dos SonarQube Security Groups"
+  type        = list(string)
 }

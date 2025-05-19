@@ -54,3 +54,42 @@ resource "aws_security_group" "jenkins" {
     }
   )
 }
+
+resource "aws_security_group" "sonarqube" {
+  name        = "${var.project_name}-${var.environment}-sonarqube-sg"
+  description = "Security group for SonarQube server"
+  vpc_id      = var.vpc_id
+
+  ingress {
+    description = "SSH"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = var.allowed_ips
+  }
+
+  ingress {
+    description = "SonarQube Web"
+    from_port   = 9000
+    to_port     = 9000
+    protocol    = "tcp"
+    cidr_blocks = var.allowed_ips
+  }
+
+  ingress {
+    description = "From Jenkins"
+    from_port   = 9000
+    to_port     = 9000
+    protocol    = "tcp"
+    security_groups = [aws_security_group.jenkins.id]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = var.tags
+}
