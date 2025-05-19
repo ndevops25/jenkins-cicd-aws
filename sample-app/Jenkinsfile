@@ -18,42 +18,115 @@ pipeline {
     stages {
         stage('Setup AWS CLI') {
             steps {
-                sh '''
-                # Instalar AWS CLI no diretório do workspace (onde temos permissões)
-                mkdir -p ${WORKSPACE}/aws-cli-local
-                curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-                unzip -q awscliv2.zip
-                ./aws/install -i ${WORKSPACE}/aws-cli-local -b ${WORKSPACE}/aws-cli-local/bin
-                
-                # Adicionar ao PATH
-                export PATH=${WORKSPACE}/aws-cli-local/bin:$PATH
-                aws --version
-                
-                # Para uso posterior nos outros estágios
-                echo "export PATH=${WORKSPACE}/aws-cli-local/bin:$PATH" > ${WORKSPACE}/aws-path.sh
-                chmod +x ${WORKSPACE}/aws-path.sh
-                '''
+                script {
+                    echo "Iniciando instalação do AWS CLI..."
+                    sh '''
+                    # Limpar área de trabalho de instalações anteriores
+                    rm -rf ${WORKSPACE}/aws-cli-local ${WORKSPACE}/awscliv2.zip ${WORKSPACE}/aws 2>/dev/null || true
+                    
+                    # Criar diretório e definir permissões
+                    mkdir -p ${WORKSPACE}/aws-cli-local
+                    chmod 755 ${WORKSPACE}/aws-cli-local
+                    
+                    # Baixar e verificar se o download funcionou
+                    curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+                    if [ ! -f awscliv2.zip ] || [ ! -s awscliv2.zip ]; then
+                        echo "ERRO: Download do AWS CLI falhou"
+                        exit 1
+                    fi
+                    
+                    # Descompactar com verificação
+                    unzip -o awscliv2.zip
+                    if [ ! -d aws ]; then
+                        echo "ERRO: Descompactação do AWS CLI falhou"
+                        exit 1
+                    fi
+                    
+                    # Instalar com logs detalhados
+                    ./aws/install -i ${WORKSPACE}/aws-cli-local -b ${WORKSPACE}/aws-cli-local/bin
+                    
+                    # Verificar instalação
+                    export PATH=${WORKSPACE}/aws-cli-local/bin:$PATH
+                    aws --version
+                    if [ $? -ne 0 ]; then
+                        echo "ERRO: Instalação do AWS CLI falhou"
+                        exit 1
+                    fi
+                    
+                    # Salvar caminho para uso posterior
+                    echo "export PATH=${WORKSPACE}/aws-cli-local/bin:$PATH" > ${WORKSPACE}/aws-path.sh
+                    chmod +x ${WORKSPACE}/aws-path.sh
+                    '''
+                }
             }
         }
         
         stage('Setup AWS Credentials') {
             steps {
-                sh '''#!/bin/bash
-                # Obter e exportar credenciais temporárias da instância EC2
-                export AWS_ACCESS_KEY_ID=$(curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/jenkins-cicd-dev-jenkins-ec2 | grep -o '"AccessKeyId" : "[^"]*"' | cut -d'"' -f4)
-                export AWS_SECRET_ACCESS_KEY=$(curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/jenkins-cicd-dev-jenkins-ec2 | grep -o '"SecretAccessKey" : "[^"]*"' | cut -d'"' -f4)
-                export AWS_SESSION_TOKEN=$(curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/jenkins-cicd-dev-jenkins-ec2 | grep -o '"Token" : "[^"]*"' | cut -d'"' -f4)
-                
-                # Salvar para uso posterior nos outros estágios
-                echo "export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID" > ${WORKSPACE}/aws-creds.sh
-                echo "export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY" >> ${WORKSPACE}/aws-creds.sh
-                echo "export AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN" >> ${WORKSPACE}/aws-creds.sh
-                chmod +x ${WORKSPACE}/aws-creds.sh
-                
-                # Verificar configuração
-                source ${WORKSPACE}/aws-path.sh
-                aws sts get-caller-identity || echo "Falha na autenticação AWS"
-                '''
+                script {
+                    echo "Configurando credenciais AWS..."
+                    withCredentials([
+                        string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY'),
+                        string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET'),
+                        string(credentialsId: 'aws-session-token', variable: 'AWS_TOKEN')
+                    ]) {
+                        // Tente usar credenciais Jenkins primeiro
+                        sh '''
+                        echo "Tentando usar credenciais do Jenkins..."
+                        echo "export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY" > ${WORKSPACE}/aws-creds.sh
+                        echo "export AWS_SECRET_ACCESS_KEY=$AWS_SECRET" >> ${WORKSPACE}/aws-creds.sh
+                        echo "export AWS_SESSION_TOKEN=$AWS_TOKEN" >> ${WORKSPACE}/aws-creds.sh
+                        chmod +x ${WORKSPACE}/aws-creds.sh
+                        '''
+                    }
+                    
+                    // Se credenciais Jenkins não existirem, tentar metadados EC2
+                    sh '''
+                    # Se não houver credenciais válidas, tentar obter dos metadados EC2
+                    source ${WORKSPACE}/aws-path.sh
+                    source ${WORKSPACE}/aws-creds.sh
+                    
+                    aws sts get-caller-identity
+                    if [ $? -ne 0 ]; then
+                        echo "Credenciais do Jenkins inválidas, tentando metadados EC2..."
+                        
+                        # Verificar se podemos acessar o serviço de metadados
+                        curl -s --connect-timeout 5 http://169.254.169.254/latest/meta-data/ >/dev/null
+                        if [ $? -ne 0 ]; then
+                            echo "AVISO: Não foi possível acessar o serviço de metadados EC2"
+                            echo "Se esta instância não está no EC2, configure as credenciais AWS no Jenkins"
+                            exit 1
+                        fi
+                        
+                        # Obter o nome do perfil de instância
+                        INSTANCE_PROFILE=$(curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/)
+                        if [ -z "$INSTANCE_PROFILE" ]; then
+                            echo "ERRO: Perfil de instância não encontrado"
+                            exit 1
+                        fi
+                        
+                        # Obter credenciais temporárias
+                        CREDS=$(curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/$INSTANCE_PROFILE)
+                        export AWS_ACCESS_KEY_ID=$(echo $CREDS | grep -o '"AccessKeyId" : "[^"]*"' | cut -d'"' -f4)
+                        export AWS_SECRET_ACCESS_KEY=$(echo $CREDS | grep -o '"SecretAccessKey" : "[^"]*"' | cut -d'"' -f4)
+                        export AWS_SESSION_TOKEN=$(echo $CREDS | grep -o '"Token" : "[^"]*"' | cut -d'"' -f4)
+                        
+                        # Salvar para uso posterior
+                        echo "export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID" > ${WORKSPACE}/aws-creds.sh
+                        echo "export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY" >> ${WORKSPACE}/aws-creds.sh
+                        echo "export AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN" >> ${WORKSPACE}/aws-creds.sh
+                        chmod +x ${WORKSPACE}/aws-creds.sh
+                        
+                        # Verificar se conseguimos credenciais válidas
+                        source ${WORKSPACE}/aws-path.sh
+                        aws sts get-caller-identity
+                        if [ $? -ne 0 ]; then
+                            echo "ERRO: Não foi possível obter credenciais AWS válidas"
+                            exit 1
+                        fi
+                    fi
+                    '''
+                }
             }
         }
         
@@ -65,6 +138,7 @@ pipeline {
                 withSonarQubeEnv('SonarQube') {
                     dir('sample-app') {
                         sh '''
+                        echo "Executando análise de código com SonarQube..."
                         # Verificar se sonar-scanner está instalado
                         which sonar-scanner || echo "Sonar Scanner não disponível"
                         
@@ -94,84 +168,114 @@ pipeline {
 
         stage('Build and Test') {
             steps {
-                dir('sample-app') {
-                    sh '''
-                    # Build imagem
-                    docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} \
-                        --build-arg PORT=${APP_PORT} \
-                        --build-arg VERSION=${APP_VERSION} .
-                    
-                    # Testar container - expor porta corretamente para o host
-                    docker run -d --name test-container-${BUILD_NUMBER} \
-                        -p ${APP_PORT}:${APP_PORT} \
-                        -e PORT=${APP_PORT} \
-                        -e APP_VERSION=${APP_VERSION} \
-                        ${DOCKER_IMAGE}:${DOCKER_TAG}
-                    
-                    # Aguardar inicialização
-                    sleep 10
-                    
-                    # Testar com endereço do host
-                    curl -f http://localhost:${APP_PORT}/health || \
-                    echo "Falha no teste - verificar logs do container"
-                    
-                    # Ver logs do container para debug
-                    docker logs test-container-${BUILD_NUMBER}
-                    
-                    # Limpar
-                    docker stop test-container-${BUILD_NUMBER} || true
-                    docker rm test-container-${BUILD_NUMBER} || true
-                    '''
+                script {
+                    echo "Iniciando build e teste da aplicação..."
+                    dir('sample-app') {
+                        sh '''
+                        # Verificar se o Dockerfile existe
+                        if [ ! -f Dockerfile ]; then
+                            echo "ERRO: Dockerfile não encontrado"
+                            exit 1
+                        fi
+                        
+                        echo "Construindo imagem Docker: ${DOCKER_IMAGE}:${DOCKER_TAG}"
+                        # Build imagem
+                        docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} \
+                            --build-arg PORT=${APP_PORT} \
+                            --build-arg VERSION=${APP_VERSION} .
+                        
+                        # Verificar se há container de teste anterior e remover
+                        docker rm -f test-container-${BUILD_NUMBER} 2>/dev/null || true
+                        
+                        echo "Iniciando container de teste"
+                        # Testar container - expor porta corretamente para o host
+                        docker run -d --name test-container-${BUILD_NUMBER} \
+                            -p ${APP_PORT}:${APP_PORT} \
+                            -e PORT=${APP_PORT} \
+                            -e APP_VERSION=${APP_VERSION} \
+                            ${DOCKER_IMAGE}:${DOCKER_TAG}
+                        
+                        # Aguardar inicialização
+                        echo "Aguardando inicialização (10s)..."
+                        sleep 10
+                        
+                        # Testar com endereço do host
+                        echo "Testando endpoint de saúde..."
+                        curl -v http://localhost:${APP_PORT}/health
+                        if [ $? -ne 0 ]; then
+                            echo "ERRO: Teste de saúde falhou"
+                            docker logs test-container-${BUILD_NUMBER}
+                            exit 1
+                        else
+                            echo "Teste de saúde passou com sucesso!"
+                        fi
+                        
+                        # Limpar
+                        docker stop test-container-${BUILD_NUMBER} || true
+                        docker rm test-container-${BUILD_NUMBER} || true
+                        '''
+                    }
                 }
             }
         }
         
         stage('Push to ECR') {
             steps {
-                sh '''#!/bin/bash
-                # Carregar credenciais e path do AWS CLI
-                source ${WORKSPACE}/aws-creds.sh
-                source ${WORKSPACE}/aws-path.sh
-                
-                # Verificar AWS CLI
-                aws --version
-                
-                # Verificar autenticação
-                aws sts get-caller-identity
-                
-                # Login no ECR
-                aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REPOSITORY%/*}
-                
-                # Tag e push
-                docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${ECR_REPOSITORY}:${DOCKER_TAG}
-                docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${ECR_REPOSITORY}:latest
-                
-                docker push ${ECR_REPOSITORY}:${DOCKER_TAG}
-                docker push ${ECR_REPOSITORY}:latest
-                '''
+                script {
+                    echo "Enviando imagem para ECR..."
+                    sh '''
+                    # Carregar credenciais e path do AWS CLI
+                    source ${WORKSPACE}/aws-creds.sh
+                    source ${WORKSPACE}/aws-path.sh
+                    
+                    # Verificar AWS CLI
+                    aws --version
+                    
+                    # Verificar autenticação
+                    aws sts get-caller-identity
+                    
+                    echo "Fazendo login no ECR..."
+                    # Login no ECR
+                    aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REPOSITORY%/*}
+                    
+                    echo "Marcando e enviando imagem..."
+                    # Tag e push
+                    docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${ECR_REPOSITORY}:${DOCKER_TAG}
+                    docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${ECR_REPOSITORY}:latest
+                    
+                    docker push ${ECR_REPOSITORY}:${DOCKER_TAG}
+                    docker push ${ECR_REPOSITORY}:latest
+                    '''
+                }
             }
         }
         
         stage('Deploy to ECS') {
             steps {
-                sh '''#!/bin/bash
-                # Carregar credenciais e path do AWS CLI
-                source ${WORKSPACE}/aws-creds.sh
-                source ${WORKSPACE}/aws-path.sh
-                
-                # Atualizar serviço ECS
-                aws ecs update-service \
-                    --cluster ${ECS_CLUSTER} \
-                    --service ${ECS_SERVICE} \
-                    --force-new-deployment \
-                    --region ${AWS_REGION}
-                
-                # Aguardar deploy
-                aws ecs wait services-stable \
-                    --cluster ${ECS_CLUSTER} \
-                    --services ${ECS_SERVICE} \
-                    --region ${AWS_REGION} || echo "Tempo excedido aguardando estabilidade do ECS"
-                '''
+                script {
+                    echo "Implantando no ECS..."
+                    sh '''
+                    # Carregar credenciais e path do AWS CLI
+                    source ${WORKSPACE}/aws-creds.sh
+                    source ${WORKSPACE}/aws-path.sh
+                    
+                    echo "Atualizando serviço ECS: ${ECS_SERVICE} no cluster ${ECS_CLUSTER}"
+                    # Atualizar serviço ECS
+                    aws ecs update-service \
+                        --cluster ${ECS_CLUSTER} \
+                        --service ${ECS_SERVICE} \
+                        --force-new-deployment \
+                        --region ${AWS_REGION}
+                    
+                    echo "Aguardando estabilização do serviço..."
+                    # Aguardar deploy
+                    aws ecs wait services-stable \
+                        --cluster ${ECS_CLUSTER} \
+                        --services ${ECS_SERVICE} \
+                        --region ${AWS_REGION} \
+                        --max-attempts 20 || echo "Tempo excedido aguardando estabilidade do ECS"
+                    '''
+                }
             }
         }
     }
@@ -179,6 +283,7 @@ pipeline {
     post {
         always {
             script {
+                echo "Limpando recursos..."
                 sh 'docker image prune -f || true'
             }
         }
@@ -187,7 +292,7 @@ pipeline {
             echo "Aplicação disponível em: http://jenkins-cicd-dev-alb-2039113869.us-east-1.elb.amazonaws.com"
         }
         failure {
-            echo 'Pipeline falhou! Verifique os logs.'
+            echo "Pipeline falhou! Verifique os logs acima para detalhes."
         }
     }
 }
