@@ -10,9 +10,45 @@ pipeline {
         APP_VERSION = "${BUILD_NUMBER}"
         ECS_CLUSTER = 'jenkins-cicd-dev'
         ECS_SERVICE = 'jenkins-cicd-dev'
+        SONAR_SERVER = 'http://35.171.200.117:9000'  // Seu IP SonarQube
+        SONAR_PROJECT = 'sample-app'
+        SONAR_LOGIN = credentials('sonar-token')  // Você criará isso no Jenkins
     }
     
     stages {
+        stage('Code Analysis') {
+            steps {
+                dir('sample-app') {
+                    sh '''
+                    # Instalar SonarScanner se necessário
+                    if [ ! -d "/var/lib/jenkins/tools/sonarscanner" ]; then
+                        mkdir -p /var/lib/jenkins/tools/sonarscanner
+                        curl -L https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.7.0.2747-linux.zip -o /tmp/sonar-scanner.zip
+                        unzip /tmp/sonar-scanner.zip -d /var/lib/jenkins/tools/
+                        mv /var/lib/jenkins/tools/sonar-scanner-* /var/lib/jenkins/tools/sonarscanner
+                        chmod +x /var/lib/jenkins/tools/sonarscanner/bin/sonar-scanner
+                    fi
+                    
+                    # Executar análise
+                    /var/lib/jenkins/tools/sonarscanner/bin/sonar-scanner \
+                      -Dsonar.projectKey=${SONAR_PROJECT} \
+                      -Dsonar.projectName=${SONAR_PROJECT} \
+                      -Dsonar.sources=. \
+                      -Dsonar.host.url=${SONAR_SERVER} \
+                      -Dsonar.login=${SONAR_LOGIN}
+                    '''
+                }
+            }
+        }
+
+        stage('Quality Gate') {
+            steps {
+                timeout(time: 1, unit: 'HOURS') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+
         stage('Build and Test') {
             steps {
                 dir('sample-app') {

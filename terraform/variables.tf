@@ -1,7 +1,7 @@
 variable "project_name" {
   description = "Nome do projeto"
   type        = string
-  default     = "jenkins-cicd"
+  default     = "devsec ops-cicd"
 }
 
 variable "environment" {
@@ -52,8 +52,13 @@ variable "instance_type" {
   default     = "t2.medium"
 }
 
-variable "key_name" {
-  description = "Nome da chave SSH"
+variable "jenkins_key_name" {
+  description = "Nome da chave Jenkins SSH"
+  type        = string
+}
+
+variable "sonarqube_key_name" {
+  description = "Nome da chave SonarQube SSH"
   type        = string
 }
 

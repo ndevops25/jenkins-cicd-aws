@@ -8,8 +8,13 @@ variable "environment" {
   type        = string
 }
 
-variable "instance_id" {
-  description = "ID da instância EC2"
+variable "jenkins_instance_id" {
+  description = "ID da instância Jenkins EC2"
+  type        = string
+}
+
+variable "sonarqube_instance_id" {
+  description = "ID da instância SonarQube EC2"
   type        = string
 }
 
