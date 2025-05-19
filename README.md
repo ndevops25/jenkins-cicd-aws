@@ -1,4 +1,4 @@
-Pipeline CI/CD com Jenkins, ECR e ECS 🚀
+Pipeline CI/CD com Jenkins, SonarQube, ECR e ECS 🚀
 ========================================
 
 Este projeto implementa um pipeline completo de CI/CD usando Jenkins para uma aplicação Python Flask, com deploy automatizado na AWS utilizando Docker, ECR (Elastic Container Registry) e ECS (Elastic Container Service). Inclui análise de código com SonarQube para manter a qualidade do código.
@@ -318,6 +318,9 @@ Para executar o pipeline, você pode:
 3.  Acompanhar a execução nos logs ou na visualização de estágios
 
 ![Jenkins Pipeline](docs/images/pipeline-running.png)
+
+- Pipeline executado:
+![Jenkins Pipeline](docs/images/jenkins-pipeline-with-sonarqube.png)
 
 🔍 Resultados da Análise de Código
 ----------------------------------
