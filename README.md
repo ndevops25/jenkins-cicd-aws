@@ -1,21 +1,31 @@
-# Pipeline CI/CD com Jenkins, ECR e ECS 🚀
+Pipeline CI/CD com Jenkins, ECR e ECS 🚀
+========================================
 
-Este projeto implementa um pipeline completo de CI/CD usando Jenkins para uma aplicação Python Flask, com deploy automatizado na AWS utilizando Docker, ECR (Elastic Container Registry) e ECS (Elastic Container Service).
+Este projeto implementa um pipeline completo de CI/CD usando Jenkins para uma aplicação Python Flask, com deploy automatizado na AWS utilizando Docker, ECR (Elastic Container Registry) e ECS (Elastic Container Service). Inclui análise de código com SonarQube para manter a qualidade do código.
 
-## 📋 Índice
+![Jenkins Pipeline](docs/images/pipeline-running.png)
 
-- [Arquitetura](#arquitetura)
-- [Pré-requisitos](#pré-requisitos)
-- [Estrutura do Projeto](#estrutura-do-projeto)
-- [Configuração da Infraestrutura](#configuração-da-infraestrutura)
-- [Configuração do Jenkins](#configuração-do-jenkins)
-- [Pipeline CI/CD](#pipeline-cicd)
-- [Deploy da Aplicação](#deploy-da-aplicação)
-- [Monitoramento](#monitoramento)
-- [Troubleshooting](#troubleshooting)
-- [Capturas de Tela](#capturas-de-tela)
+📋 Índice
+---------
 
-## 🏗️ Arquitetura
+-   [Arquitetura](#arquitetura)
+-   [Pré-requisitos](#pr%C3%A9-requisitos)
+-   [Estrutura do Projeto](#estrutura-do-projeto)
+-   [Configuração da Infraestrutura](#configura%C3%A7%C3%A3o-da-infraestrutura)
+-   [Configuração do Jenkins](#configura%C3%A7%C3%A3o-do-jenkins)
+-   [Configuração do SonarQube](#configura%C3%A7%C3%A3o-do-sonarqube)
+-   [Pipeline CI/CD](#pipeline-cicd)
+-   [Deploy da Aplicação](#deploy-da-aplica%C3%A7%C3%A3o)
+-   [Monitoramento](#monitoramento)
+-   [Troubleshooting](#troubleshooting)
+-   [Resultados da Análise de Código](#resultados-da-an%C3%A1lise-de-c%C3%B3digo)
+-   [Segurança](#seguran%C3%A7a)
+-   [Contribuindo](#contribuindo)
+-   [Licença](#licen%C3%A7a)
+-   [Autores](#autores)
+
+🏗️ Arquitetura
+---------------
 
 ```
 ┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
@@ -24,7 +34,7 @@ Este projeto implementa um pipeline completo de CI/CD usando Jenkins para uma ap
                            │                                        │
                            ▼                                        ▼
                     ┌─────────────┐                          ┌─────────────┐
-                    │   Docker    │                          │     ALB     │
+                    │  SonarQube  │                          │     ALB     │
                     └─────────────┘                          └─────────────┘
                                                                     │
                                                                     ▼
@@ -35,31 +45,39 @@ Este projeto implementa um pipeline completo de CI/CD usando Jenkins para uma ap
 
 ### Componentes:
 
-- **GitHub**: Repositório de código fonte
-- **Jenkins**: Servidor de CI/CD
-- **Docker**: Containerização da aplicação
-- **ECR**: Registro de imagens Docker na AWS
-- **ECS/Fargate**: Orquestração de containers
-- **ALB**: Load Balancer para distribuição de tráfego
+-   **GitHub**: Repositório de código fonte
+-   **Jenkins**: Servidor de CI/CD para execução do pipeline
+-   **SonarQube**: Ferramenta de análise de qualidade de código
+-   **Docker**: Containerização da aplicação
+-   **ECR**: Registro de imagens Docker na AWS
+-   **ECS/Fargate**: Orquestração de containers sem servidor
+-   **ALB**: Load Balancer para distribuição de tráfego
 
-## 🔧 Pré-requisitos
+🔧 Pré-requisitos
+-----------------
 
 ### Ferramentas Necessárias:
 
-- AWS CLI configurado
-- Terraform >= 1.0
-- Git
-- Docker
-- Conta AWS com permissões adequadas
+-   AWS CLI configurado
+-   Terraform >= 1.0
+-   Git
+-   Docker
+-   Conta AWS com permissões adequadas
+-   JDK 11 ou superior (para Jenkins)
+-   Python 3.9+ (para aplicação de exemplo)
 
 ### Conhecimentos Requeridos:
 
-- Conceitos básicos de CI/CD
-- Docker e containerização
-- AWS Services (EC2, ECS, ECR, VPC)
-- Terraform para IaC
+-   Conceitos básicos de CI/CD
+-   Docker e containerização
+-   AWS Services (EC2, ECS, ECR, VPC)
+-   Terraform para IaC
+-   Análise de qualidade de código com SonarQube
 
-## 📁 Estrutura do Projeto
+📁 Estrutura do Projeto
+-----------------------
+
+O projeto está organizado da seguinte forma:
 
 ```
 jenkins-cicd-aws/
@@ -74,394 +92,391 @@ jenkins-cicd-aws/
 │   │   ├── ecr/                 # Container Registry
 │   │   ├── ecs/                 # Container Service
 │   │   └── elastic-ip/          # IPs elásticos
-│   └── user-data.sh             # Script de inicialização
+│   ├── environments/
+│   │   ├── dev/                 # Configurações para ambiente de desenvolvimento
+│   │   └── prod/                # Configurações para ambiente de produção
+│   └── .terraform.lock.hcl
 ├── sample-app/                  # Aplicação de exemplo
 │   ├── app.py                   # Aplicação Flask
 │   ├── requirements.txt         # Dependências Python
 │   ├── Dockerfile               # Imagem Docker
 │   ├── test_app.py              # Testes unitários
-│   └── Jenkinsfile              # Pipeline CI/CD
+│   ├── Jenkinsfile              # Pipeline CI/CD
+│   └── sonar-project.properties # Configuração do SonarQube
 ├── scripts/                     # Scripts auxiliares
-│   ├── setup-backend.sh         # Configurar backend Terraform
-│   └── configure-jenkins.sh     # Configurar Jenkins
+│   ├── docker/                  # Scripts relacionados ao Docker
+│   │   ├── jenkins-docker.sh    # Script para Jenkins com Docker
+│   │   └── sonarqube-docker.sh  # Script para SonarQube com Docker
+│   └── compute/                 # Scripts para configuração de instâncias
+│       └── install-jenkins-without-docker.sh
 └── README.md                    # Este arquivo
 ```
 
-## 🚀 Configuração da Infraestrutura
+🚀 Configuração da Infraestrutura
+---------------------------------
 
-### 1. Preparar Backend do Terraform
+### 1\. Preparar Backend do Terraform
 
-```bash
+bash
+
+```
 # Configurar S3 e DynamoDB para estado remoto
 ./scripts/setup-backend.sh
 ```
 
-### 2. Criar Chave SSH
+### 2\. Criar Chave SSH
 
-```bash
+bash
+
+```
 # Criar par de chaves na AWS
-aws ec2 create-key-pair --key-name jenkins-key-dev \
+aws ec2 create-key-pair --key-name jenkins-key-dev\
     --query 'KeyMaterial' --output text > ~/.ssh/jenkins-key-dev.pem
 chmod 400 ~/.ssh/jenkins-key-dev.pem
 ```
 
-### 3. Deploy da Infraestrutura
+### 3\. Deploy da Infraestrutura
 
-```bash
+bash
+
+```
 cd terraform/
 terraform init
 terraform plan -var="key_name=jenkins-key-dev"
 terraform apply -var="key_name=jenkins-key-dev" -auto-approve
 ```
 
-### 4. Recursos Criados
+### 4\. Recursos Criados
 
-- VPC com subnets públicas e privadas
-- Security Groups configurados
-- Instância EC2 com Jenkins
-- ECR Repository
-- ECS Cluster com Fargate
-- Application Load Balancer
-- Roles IAM necessários
+-   VPC com subnets públicas e privadas
+-   Security Groups configurados
+-   Instância EC2 com Jenkins
+-   Instância EC2 com SonarQube
+-   ECR Repository
+-   ECS Cluster com Fargate
+-   Application Load Balancer
+-   Roles IAM necessários
 
-## ⚙️ Configuração do Jenkins
+⚙️ Configuração do Jenkins
+--------------------------
 
-### 1. Acessar Jenkins
+### 1\. Acessar Jenkins
 
-```bash
+bash
+
+```
 # Obter URL do Jenkins
 JENKINS_URL=$(terraform output -raw jenkins_url)
 echo $JENKINS_URL
 
 # Obter senha inicial
-ssh -i ~/.ssh/jenkins-key-dev.pem ubuntu@<IP> \
+ssh -i ~/.ssh/jenkins-key-dev.pem ubuntu@<IP>\
     "sudo cat /var/lib/jenkins/secrets/initialAdminPassword"
 ```
 
-### 2. Configuração Inicial
+### 2\. Configuração Inicial
 
-1. Acessar URL do Jenkins no navegador
-2. Inserir senha inicial
-3. Instalar plugins sugeridos
-4. Criar usuário administrador
+1.  Acessar URL do Jenkins no navegador (<http://3.218.161.51:8080/>)
+2.  Inserir senha inicial
+3.  Instalar plugins sugeridos
+4.  Criar usuário administrador
 
-### 3. Plugins Necessários
+### 3\. Plugins Necessários
 
-- Docker Pipeline
-- Amazon ECR
-- Pipeline: AWS Steps
-- GitHub Integration
-- Blue Ocean (opcional)
+-   Docker Pipeline
+-   Amazon ECR
+-   Pipeline: AWS Steps
+-   GitHub Integration
+-   SonarQube Scanner
+-   Blue Ocean (opcional)
 
-### 4. Configurar Credenciais
+### 4\. Configurar Credenciais
 
 #### GitHub Token:
-1. GitHub → Settings → Developer settings → Personal access tokens
-2. Gerar novo token com permissões: `repo`, `workflow`
-3. No Jenkins: Manage Jenkins → Credentials → Add Credentials
-   - Kind: Username with password
-   - ID: `github-credentials`
-   - Username: seu-usuario-github
-   - Password: token-gerado
+
+1.  GitHub → Settings → Developer settings → Personal access tokens
+2.  Gerar novo token com permissões: `repo`, `workflow`
+3.  No Jenkins: Manage Jenkins → Credentials → Add Credentials
+    -   Kind: Username with password
+    -   ID: `github-credentials`
+    -   Username: seu-usuario-github
+    -   Password: token-gerado
 
 #### AWS Credentials:
-1. No Jenkins: Manage Jenkins → Credentials → Add Credentials
-   - Kind: AWS Credentials
-   - ID: `aws-credentials`
-   - Access Key ID: sua-access-key
-   - Secret Access Key: sua-secret-key
 
-## 📦 Pipeline CI/CD
+1.  No Jenkins: Manage Jenkins → Credentials → Add Credentials
+    -   Kind: Secret text
+    -   ID: `aws-access-key-id`
+    -   Secret: sua-access-key
+2.  No Jenkins: Manage Jenkins → Credentials → Add Credentials
+    -   Kind: Secret text
+    -   ID: `aws-secret-access-key`
+    -   Secret: sua-secret-key
 
-### 1. Estrutura do Pipeline
+#### SonarQube Token:
 
-```groovy
-pipeline {
-    agent any
-    
-    environment {
-        AWS_REGION = 'us-east-1'
-        ECR_REPOSITORY = '047447425887.dkr.ecr.us-east-1.amazonaws.com/jenkins-cicd-dev'
-        DOCKER_IMAGE = 'sample-app'
-        DOCKER_TAG = "${BUILD_NUMBER}"
-        APP_PORT = '5001'
-        APP_VERSION = "${BUILD_NUMBER}"
-        ECS_CLUSTER = 'jenkins-cicd-dev'
-        ECS_SERVICE = 'jenkins-cicd-dev'
-    }
-    
-    stages {
-        stage('Build and Test') {
-            steps {
-                dir('sample-app') {
-                    sh '''
-                    # Build imagem
-                    docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} \
-                        --build-arg PORT=${APP_PORT} \
-                        --build-arg VERSION=${APP_VERSION} .
-                    
-                    # Teste container
-                    docker run -d --name test-container-${BUILD_NUMBER} \
-                        -p ${APP_PORT}:${APP_PORT} \
-                        -e PORT=${APP_PORT} \
-                        -e APP_VERSION=${APP_VERSION} \
-                        ${DOCKER_IMAGE}:${DOCKER_TAG}
-                    
-                    sleep 5
-                    curl -f http://localhost:${APP_PORT}/health || echo "Falha no teste"
-                    
-                    docker stop test-container-${BUILD_NUMBER}
-                    docker rm test-container-${BUILD_NUMBER}
-                    '''
-                }
-            }
-        }
-        
-        stage('Push to ECR') {
-            steps {
-                sh '''#!/bin/bash
-                # Obter credenciais temporárias
-                CREDENTIALS=$(curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/jenkins-cicd-dev-jenkins-ec2)
-                
-                # Extrair e exportar
-                export AWS_ACCESS_KEY_ID=$(echo $CREDENTIALS | grep -o '"AccessKeyId" : "[^"]*"' | cut -d'"' -f4)
-                export AWS_SECRET_ACCESS_KEY=$(echo $CREDENTIALS | grep -o '"SecretAccessKey" : "[^"]*"' | cut -d'"' -f4)
-                export AWS_SESSION_TOKEN=$(echo $CREDENTIALS | grep -o '"Token" : "[^"]*"' | cut -d'"' -f4)
-                
-                # Login no ECR
-                aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REPOSITORY%/*}
-                
-                # Tag e push
-                docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${ECR_REPOSITORY}:${DOCKER_TAG}
-                docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${ECR_REPOSITORY}:latest
-                
-                docker push ${ECR_REPOSITORY}:${DOCKER_TAG}
-                docker push ${ECR_REPOSITORY}:latest
-                '''
-            }
-        }
-        
-        stage('Deploy to ECS') {
-            steps {
-                sh '''#!/bin/bash
-                # Obter credenciais temporárias
-                CREDENTIALS=$(curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/jenkins-cicd-dev-jenkins-ec2)
-                
-                # Extrair e exportar
-                export AWS_ACCESS_KEY_ID=$(echo $CREDENTIALS | grep -o '"AccessKeyId" : "[^"]*"' | cut -d'"' -f4)
-                export AWS_SECRET_ACCESS_KEY=$(echo $CREDENTIALS | grep -o '"SecretAccessKey" : "[^"]*"' | cut -d'"' -f4)
-                export AWS_SESSION_TOKEN=$(echo $CREDENTIALS | grep -o '"Token" : "[^"]*"' | cut -d'"' -f4)
-                
-                # Atualizar serviço ECS
-                aws ecs update-service \
-                    --cluster ${ECS_CLUSTER} \
-                    --service ${ECS_SERVICE} \
-                    --force-new-deployment \
-                    --region ${AWS_REGION}
-                
-                # Aguardar deploy
-                aws ecs wait services-stable \
-                    --cluster ${ECS_CLUSTER} \
-                    --services ${ECS_SERVICE} \
-                    --region ${AWS_REGION}
-                '''
-            }
-        }
-    }
-    
-    post {
-        always {
-            cleanWs()
-            sh 'docker image prune -f || true'
-        }
-        success {
-            echo "Pipeline executado com sucesso! Versão ${APP_VERSION} implantada."
-            echo "Aplicação disponível em: http://jenkins-cicd-dev-alb-2039113869.us-east-1.elb.amazonaws.com"
-        }
-        failure {
-            echo 'Pipeline falhou! Verifique os logs.'
-        }
-    }
-}
+1.  No SonarQube: Administration → Security → Users → Tokens
+2.  Gerar novo token com nome "jenkins-integration"
+3.  No Jenkins: Manage Jenkins → Credentials → Add Credentials
+    -   Kind: Secret text
+    -   ID: `sonar-token`
+    -   Secret: token-gerado-no-sonarqube
+
+![Configuração do Token no SonarQube](docs/images/sonarqube-token.png)
+
+📊 Configuração do SonarQube
+----------------------------
+
+### 1\. Acesso ao SonarQube
+
+O SonarQube está disponível em <http://35.171.200.117:9000> com as seguintes credenciais padrão:
+
+-   Username: admin
+-   Password: admin (alterada na primeira configuração)
+
+### 2\. Configuração no Jenkins
+
+1.  Instalar o plugin "SonarQube Scanner" no Jenkins
+2.  Configurar o SonarQube no Jenkins:
+    -   Manage Jenkins → System → SonarQube servers
+    -   Nome: SonarQube
+    -   URL do servidor: <http://35.171.200.117:9000>
+    -   Token de autenticação: Selecionar credencial `sonar-token`
+
+![Configuração do SonarQube Scanner](docs/images/sonarqube-jenkins-config.png)
+
+### 3\. Configuração do SonarQube Scanner
+
+1.  Manage Jenkins → Tools → SonarQube Scanner installations
+2.  Adicionar SonarQube Scanner:
+    -   Nome: SonarScanner
+    -   Versão: SonarQube Scanner 4.7.0.2747
+    -   Selecionar "Instalar automaticamente"
+
+- Para baixar a extensão, vá para "Extensões Disponíveis":
+![Configuração do SonarQube Scanner](docs/images/sonarqube-scanner-plugin.png)
+
+- Configuração do SonarQube Scanner com o plugin instalado na plataforma Jenkins:
+![Configuração do SonarQube Scanner](docs/images/sonarqube-scanner-config.png)
+
+### 4\. Configuração do Projeto no SonarQube
+
+1.  Criar projeto no SonarQube com a chave "sample-app"
+2.  Configurar arquivo `sonar-project.properties`:
+
+properties
+
+```
+# Identificação do projeto
+sonar.projectKey=sample-app
+sonar.projectName=Sample App
+sonar.projectVersion=1.0
+
+# Configurações do servidor
+sonar.host.url=http://35.171.200.117:9000
+
+# Caminho para os arquivos de código
+sonar.sources=.
+sonar.python.coverage.reportPaths=coverage.xml
+sonar.python.xunit.reportPath=test-results.xml
+
+# Codificação do código-fonte
+sonar.sourceEncoding=UTF-8
 ```
 
-### 2. Criar Pipeline Job
+📦 Pipeline CI/CD
+-----------------
 
-1. Jenkins → New Item → Pipeline
-2. Nome: `sample-app-pipeline`
-3. Pipeline from SCM:
-   - SCM: Git
-   - Repository URL: https://github.com/seu-usuario/seu-repo
-   - Credentials: github-credentials
-   - Branch: */main
-   - Script Path: sample-app/Jenkinsfile
+O pipeline CI/CD é definido no Jenkinsfile e consiste nas seguintes etapas:
 
-### 3. Executar Pipeline
+### 1\. Verificação de Acesso AWS
 
-1. Build Now
-2. Acompanhar execução no Blue Ocean ou Stage View
-3. Verificar logs de cada stage
+Verifica se o Jenkins tem acesso correto à AWS usando as credenciais configuradas.
 
-## 🚢 Deploy da Aplicação
+### 2\. Análise de Código com SonarQube
 
-### 1. Build e Push para ECR
+Executa análise estática de código com SonarQube para identificar problemas de qualidade, vulnerabilidades e bugs.
 
-```bash
-# Login no ECR
-aws ecr get-login-password --region us-east-1 | \
-    docker login --username AWS --password-stdin <ECR_URI>
+### 3\. Build e Teste da Aplicação
 
-# Build da imagem
-docker build -t sample-app:latest ./sample-app
+Constrói a imagem Docker da aplicação e executa testes para verificar seu funcionamento.
 
-# Tag e push
-docker tag sample-app:latest <ECR_URI>:latest
-docker push <ECR_URI>:latest
+### 4\. Push para ECR
+
+Envia a imagem Docker para o Amazon ECR para armazenamento seguro.
+
+### 5\. Deploy no ECS
+
+Atualiza o serviço ECS com a nova imagem, implementando a aplicação em produção.
+
+### Execução do Pipeline
+
+Para executar o pipeline, você pode:
+
+1.  Acessar o Jenkins e selecionar o projeto "sample-app-pipeline"
+2.  Clicar em "Build Now"
+3.  Acompanhar a execução nos logs ou na visualização de estágios
+
+![Jenkins Pipeline](docs/images/pipeline-running.png)
+
+🔍 Resultados da Análise de Código
+----------------------------------
+
+Após a execução do pipeline, é possível visualizar os resultados da análise de código no SonarQube:
+
+- Dashboard de Qualidade de Software na plataforma do SonarQube:
+![Jenkins Pipeline](docs/images/sonarqube-dashboard.png)
+
+- Pressione a linha de informações para ver os detalhes da inspeção de qualidade:
+![Jenkins Pipeline](docs/images/sonarqube-dashboard-details.png)
+
+Os resultados atuais mostram:
+
+-   0 Bugs detectados
+-   0 Vulnerabilidades de segurança
+-   2 Security Hotspots para revisão (0.0% revisados)
+-   0 Code Smells
+-   0% de Cobertura de código em 40 linhas
+-   0% de Duplicação de código em 209 linhas
+
+Todos os Quality Gates foram aprovados, resultando em status "Passed".
+
+🚢 Deploy da Aplicação
+----------------------
+
+### 1\. Verificar Implantação
+
+bash
+
+```
+# Verificar status do serviço ECS
+aws ecs describe-services\
+    --cluster jenkins-cicd-dev\
+    --services jenkins-cicd-dev\
+    --region us-east-1
 ```
 
-### 2. Deploy no ECS
+### 2\. Testar Aplicação
 
-```bash
-# Atualizar service
-aws ecs update-service \
-    --cluster jenkins-cicd-dev \
-    --service jenkins-cicd-dev \
-    --force-new-deployment
+A aplicação está disponível no URL do Application Load Balancer:
 
-# Verificar status
-aws ecs describe-services \
-    --cluster jenkins-cicd-dev \
-    --services jenkins-cicd-dev
+bash
+
+```
+# Acessar endpoint de saúde
+curl http://jenkins-cicd-dev-alb-2039113869.us-east-1.elb.amazonaws.com/health
 ```
 
-### 3. Verificar Aplicação
-
-```bash
-# Obter URL do ALB
-ALB_URL=$(terraform output -raw alb_dns_name)
-curl http://$ALB_URL/health
-```
-
-## 📊 Monitoramento
+📊 Monitoramento
+----------------
 
 ### CloudWatch Logs
 
-```bash
+bash
+
+```
 # Ver logs do ECS
 aws logs tail /ecs/jenkins-cicd-dev --follow
 ```
 
 ### CloudWatch Metrics
 
-- CPU e Memória do ECS
-- Latência do ALB
-- Healthy hosts no Target Group
+-   CPU e Memória do ECS
+-   Latência do ALB
+-   Healthy hosts no Target Group
 
 ### Health Checks
 
-- Jenkins: http://<JENKINS_IP>:8080
-- Aplicação: http://<ALB_DNS>/health
+-   Jenkins: <http://3.218.161.51:8080>
+-   SonarQube: <http://35.171.200.117:9000>
+-   Aplicação: <http://jenkins-cicd-dev-alb-2039113869.us-east-1.elb.amazonaws.com/health>
 
-## 🔍 Troubleshooting
+🔍 Troubleshooting
+------------------
 
-### Jenkins não está acessível
+### Problemas com o SonarQube
 
-```bash
-# Verificar status
-sudo systemctl status jenkins
+Se o SonarScanner não estiver funcionando:
 
-# Ver logs
-sudo journalctl -u jenkins -f
+1.  Verificar se o plugin do SonarQube está instalado no Jenkins
+2.  Confirmar se as credenciais do token SonarQube estão corretas
+3.  Verificar conectividade entre Jenkins e SonarQube
+4.  Examinar os logs do SonarQube:
 
-# Verificar Security Group
-aws ec2 describe-security-groups --filters "Name=group-name,Values=*jenkins*"
-```
+    bash
+
+    ```
+    docker logs sonarqube-container
+    ```
 
 ### Pipeline falhando
 
-1. Verificar credenciais do GitHub
-2. Verificar permissões IAM
-3. Verificar se Docker está rodando
-4. Revisar logs do Jenkins
+1.  Verificar acesso às credenciais da AWS
+2.  Confirmar permissões corretas do IAM
+3.  Verificar conectividade de rede entre Jenkins, SonarQube e AWS
+4.  Examinar os logs do pipeline para identificar o ponto de falha
 
 ### ECS não inicia tasks
 
-```bash
+bash
+
+```
 # Ver eventos do service
-aws ecs describe-services \
-    --cluster jenkins-cicd-dev \
-    --services jenkins-cicd-dev \
+aws ecs describe-services\
+    --cluster jenkins-cicd-dev\
+    --services jenkins-cicd-dev\
     --query 'services[0].events[:5]'
 
 # Verificar logs do container
-aws logs get-log-events \
-    --log-group-name /ecs/jenkins-cicd-dev \
+aws logs get-log-events\
+    --log-group-name /ecs/jenkins-cicd-dev\
     --log-stream-name <STREAM_NAME>
 ```
 
-### Aplicação não responde
-
-1. Verificar Target Group health
-2. Verificar Security Groups do ALB e ECS
-3. Verificar logs da aplicação
-4. Testar conectividade entre componentes
-
-## 📸 Capturas de Tela
-
-### 1. Terraform Apply
-![Terraform Apply](docs/images/terraform-apply.png)
-
-### 2. Jenkins Dashboard
-![Jenkins Dashboard](docs/images/jenkins-dashboard.png)
-
-### 3. Pipeline em Execução
-![Pipeline Running](docs/images/pipeline-running.png)
-
-### 4. ECS Service
-![ECS Service](docs/images/ecs-service.png)
-
-### 5. Aplicação Rodando
-![App Running](docs/images/app-running.png)
-
-## 🔐 Segurança
+🔐 Segurança
+------------
 
 ### Boas Práticas Implementadas:
 
-- Secrets não expostos no código
-- IAM roles com princípio do menor privilégio
-- Security Groups restritivos
-- Imagens Docker escaneadas no ECR
-- HTTPS habilitado no ALB (produção)
+-   Secrets gerenciados como credenciais no Jenkins
+-   IAM roles com princípio do menor privilégio
+-   Security Groups restritivos
+-   Análise de segurança com SonarQube
+-   Escaneamento de vulnerabilidades em imagens Docker
 
 ### Melhorias Recomendadas:
 
-- Implementar VPN para acesso ao Jenkins
-- Usar AWS Secrets Manager para senhas
-- Habilitar MFA para usuários Jenkins
-- Implementar network policies no ECS
+-   Implementar VPN para acesso ao Jenkins
+-   Usar AWS Secrets Manager para senhas
+-   Habilitar MFA para usuários Jenkins
+-   Implementar network policies no ECS
 
-## 🤝 Contribuindo
+🤝 Contribuindo
+---------------
 
-1. Fork o projeto
-2. Crie uma branch para sua feature (`git checkout -b feature/AmazingFeature`)
-3. Commit suas mudanças (`git commit -m 'Add some AmazingFeature'`)
-4. Push para a branch (`git push origin feature/AmazingFeature`)
-5. Abra um Pull Request
+1.  Fork o projeto
+2.  Crie uma branch para sua feature (`git checkout -b feature/AmazingFeature`)
+3.  Commit suas mudanças (`git commit -m 'Add some AmazingFeature'`)
+4.  Push para a branch (`git push origin feature/AmazingFeature`)
+5.  Abra um Pull Request
 
-## 📝 Licença
+📝 Licença
+----------
 
 Este projeto está sob a licença MIT. Veja o arquivo `LICENSE` para mais detalhes.
 
-## 👥 Autores
+👥 Autores
+----------
 
-- **Seu Nome** - *Trabalho Inicial* - [ndevops25](https://github.com/ndevops25)
+-   **ndevops25** - *Trabalho Inicial* - [ndevops25](https://github.com/ndevops25)
 
-## 🙏 Agradecimentos
+🙏 Agradecimentos
+-----------------
 
-- Professor pela orientação
-- Colegas de turma pelo apoio
-- Documentação da AWS e Jenkins
+-   Professor pela orientação
+-   Colegas de turma pelo apoio
+-   Documentação da AWS, Jenkins e SonarQube
 
----
+* * * * *
 
 **Nota**: Este projeto foi desenvolvido como parte do trabalho CP2 - Construção de um Pipeline CI/CD usando Jenkins.
