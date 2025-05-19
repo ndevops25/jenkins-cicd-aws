@@ -12,20 +12,47 @@ pipeline {
         ECS_SERVICE = 'jenkins-cicd-dev'
         SONAR_SERVER = 'http://35.171.200.117:9000'
         SONAR_PROJECT = 'sample-app'
+        HOME = "${WORKSPACE}" // Define HOME para o workspace para garantir permissões
     }
     
     stages {
-        stage('Setup Tools') {
+        stage('Setup AWS CLI') {
             steps {
                 sh '''
-                # Instalar AWS CLI
+                # Instalar AWS CLI no diretório do workspace (onde temos permissões)
+                mkdir -p ${WORKSPACE}/aws-cli-local
                 curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
                 unzip -q awscliv2.zip
-                ./aws/install -i /usr/local/aws-cli -b /usr/local/bin
+                ./aws/install -i ${WORKSPACE}/aws-cli-local -b ${WORKSPACE}/aws-cli-local/bin
+                
+                # Adicionar ao PATH
+                export PATH=${WORKSPACE}/aws-cli-local/bin:$PATH
                 aws --version
                 
-                # Verificar se o sonar-scanner está instalado
-                which sonar-scanner || echo "Sonar Scanner não encontrado"
+                # Para uso posterior nos outros estágios
+                echo "export PATH=${WORKSPACE}/aws-cli-local/bin:$PATH" > ${WORKSPACE}/aws-path.sh
+                chmod +x ${WORKSPACE}/aws-path.sh
+                '''
+            }
+        }
+        
+        stage('Setup AWS Credentials') {
+            steps {
+                sh '''#!/bin/bash
+                # Obter e exportar credenciais temporárias da instância EC2
+                export AWS_ACCESS_KEY_ID=$(curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/jenkins-cicd-dev-jenkins-ec2 | grep -o '"AccessKeyId" : "[^"]*"' | cut -d'"' -f4)
+                export AWS_SECRET_ACCESS_KEY=$(curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/jenkins-cicd-dev-jenkins-ec2 | grep -o '"SecretAccessKey" : "[^"]*"' | cut -d'"' -f4)
+                export AWS_SESSION_TOKEN=$(curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/jenkins-cicd-dev-jenkins-ec2 | grep -o '"Token" : "[^"]*"' | cut -d'"' -f4)
+                
+                # Salvar para uso posterior nos outros estágios
+                echo "export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID" > ${WORKSPACE}/aws-creds.sh
+                echo "export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY" >> ${WORKSPACE}/aws-creds.sh
+                echo "export AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN" >> ${WORKSPACE}/aws-creds.sh
+                chmod +x ${WORKSPACE}/aws-creds.sh
+                
+                # Verificar configuração
+                source ${WORKSPACE}/aws-path.sh
+                aws sts get-caller-identity || echo "Falha na autenticação AWS"
                 '''
             }
         }
@@ -70,24 +97,22 @@ pipeline {
                 dir('sample-app') {
                     sh '''
                     # Build imagem
-                    docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} \\
-                        --build-arg PORT=${APP_PORT} \\
+                    docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} \
+                        --build-arg PORT=${APP_PORT} \
                         --build-arg VERSION=${APP_VERSION} .
                     
                     # Testar container - expor porta corretamente para o host
-                    # Usar IP do host do Docker em vez de localhost
-                    docker run -d --name test-container-${BUILD_NUMBER} \\
-                        --network host \\
-                        -e PORT=${APP_PORT} \\
-                        -e APP_VERSION=${APP_VERSION} \\
+                    docker run -d --name test-container-${BUILD_NUMBER} \
+                        -p ${APP_PORT}:${APP_PORT} \
+                        -e PORT=${APP_PORT} \
+                        -e APP_VERSION=${APP_VERSION} \
                         ${DOCKER_IMAGE}:${DOCKER_TAG}
                     
                     # Aguardar inicialização
                     sleep 10
                     
                     # Testar com endereço do host
-                    curl -f http://localhost:${APP_PORT}/health || \\
-                    curl -f http://127.0.0.1:${APP_PORT}/health || \\
+                    curl -f http://localhost:${APP_PORT}/health || \
                     echo "Falha no teste - verificar logs do container"
                     
                     # Ver logs do container para debug
@@ -104,27 +129,25 @@ pipeline {
         stage('Push to ECR') {
             steps {
                 sh '''#!/bin/bash
-                # Verificar se AWS CLI está instalado
-                aws --version || echo "AWS CLI não está instalado"
+                # Carregar credenciais e path do AWS CLI
+                source ${WORKSPACE}/aws-creds.sh
+                source ${WORKSPACE}/aws-path.sh
                 
-                # Configurar AWS CLI caso não seja possível obter credenciais do metadado
-                export AWS_ACCESS_KEY_ID=$(curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/jenkins-cicd-dev-jenkins-ec2 | grep -o '"AccessKeyId" : "[^"]*"' | cut -d'"' -f4)
-                export AWS_SECRET_ACCESS_KEY=$(curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/jenkins-cicd-dev-jenkins-ec2 | grep -o '"SecretAccessKey" : "[^"]*"' | cut -d'"' -f4)
-                export AWS_SESSION_TOKEN=$(curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/jenkins-cicd-dev-jenkins-ec2 | grep -o '"Token" : "[^"]*"' | cut -d'"' -f4)
+                # Verificar AWS CLI
+                aws --version
                 
-                # Para debug
-                echo "Verificando configuração AWS:"
-                aws sts get-caller-identity || echo "Falha na autenticação AWS"
+                # Verificar autenticação
+                aws sts get-caller-identity
                 
                 # Login no ECR
-                aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REPOSITORY%/*} || echo "Falha no login ECR"
+                aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REPOSITORY%/*}
                 
                 # Tag e push
                 docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${ECR_REPOSITORY}:${DOCKER_TAG}
                 docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${ECR_REPOSITORY}:latest
                 
-                docker push ${ECR_REPOSITORY}:${DOCKER_TAG} || echo "Falha no push da imagem"
-                docker push ${ECR_REPOSITORY}:latest || echo "Falha no push da tag latest"
+                docker push ${ECR_REPOSITORY}:${DOCKER_TAG}
+                docker push ${ECR_REPOSITORY}:latest
                 '''
             }
         }
@@ -132,19 +155,21 @@ pipeline {
         stage('Deploy to ECS') {
             steps {
                 sh '''#!/bin/bash
-                # Usar as mesmas credenciais configuradas anteriormente
+                # Carregar credenciais e path do AWS CLI
+                source ${WORKSPACE}/aws-creds.sh
+                source ${WORKSPACE}/aws-path.sh
                 
                 # Atualizar serviço ECS
-                aws ecs update-service \\
-                    --cluster ${ECS_CLUSTER} \\
-                    --service ${ECS_SERVICE} \\
-                    --force-new-deployment \\
-                    --region ${AWS_REGION} || echo "Falha na atualização do serviço ECS"
+                aws ecs update-service \
+                    --cluster ${ECS_CLUSTER} \
+                    --service ${ECS_SERVICE} \
+                    --force-new-deployment \
+                    --region ${AWS_REGION}
                 
                 # Aguardar deploy
-                aws ecs wait services-stable \\
-                    --cluster ${ECS_CLUSTER} \\
-                    --services ${ECS_SERVICE} \\
+                aws ecs wait services-stable \
+                    --cluster ${ECS_CLUSTER} \
+                    --services ${ECS_SERVICE} \
                     --region ${AWS_REGION} || echo "Tempo excedido aguardando estabilidade do ECS"
                 '''
             }
