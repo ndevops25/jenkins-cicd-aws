@@ -18,41 +18,27 @@ pipeline {
     stages {
         stage('Code Analysis') {
             steps {
-                withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+                withSonarQubeEnv('SonarQube') {
                     dir('sample-app') {
                         sh '''
-                        # Instalar SonarScanner se necessário
-                        if [ ! -d "/var/lib/jenkins/tools/sonarscanner" ]; then
-                            mkdir -p /var/lib/jenkins/tools/sonarscanner
-                            curl -L https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.7.0.2747-linux.zip -o /tmp/sonar-scanner.zip
-                            unzip /tmp/sonar-scanner.zip -d /var/lib/jenkins/tools/
-                            mv /var/lib/jenkins/tools/sonar-scanner-* /var/lib/jenkins/tools/sonarscanner
-                            chmod +x /var/lib/jenkins/tools/sonarscanner/bin/sonar-scanner
-                        fi
-                        
-                        # Cria o arquivo sonar-project.properties
+                        # Criar arquivo sonar-project.properties
                         cat > sonar-project.properties << EOL
-                            # Identificação do projeto
-                            sonar.projectKey=sample-app
-                            sonar.projectName=Sample App
-                            sonar.projectVersion=${APP_VERSION}
+                        # Identificação do projeto
+                        sonar.projectKey=sample-app
+                        sonar.projectName=Sample App
+                        sonar.projectVersion=${APP_VERSION}
 
-                            # Caminho para os arquivos de código
-                            sonar.sources=.
-                            sonar.python.coverage.reportPaths=coverage.xml
-                            sonar.python.xunit.reportPath=test-results.xml
+                        # Caminho para os arquivos de código
+                        sonar.sources=.
+                        sonar.python.coverage.reportPaths=coverage.xml
+                        sonar.python.xunit.reportPath=test-results.xml
 
-                            # Codificação do código-fonte
-                            sonar.sourceEncoding=UTF-8
+                        # Codificação do código-fonte
+                        sonar.sourceEncoding=UTF-8
                         EOL
                         
-                        # Executar análise
-                        /var/lib/jenkins/tools/sonarscanner/bin/sonar-scanner \\
-                          -Dsonar.projectKey=${SONAR_PROJECT} \\
-                          -Dsonar.projectName=${SONAR_PROJECT} \\
-                          -Dsonar.sources=. \\
-                          -Dsonar.host.url=${SONAR_SERVER} \\
-                          -Dsonar.login=${SONAR_TOKEN}
+                        # Executar análise usando o scanner configurado no Jenkins
+                        sonar-scanner
                         '''
                     }
                 }
