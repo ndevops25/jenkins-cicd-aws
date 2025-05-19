@@ -16,39 +16,23 @@ pipeline {
     }
     
     stages {
-        stage('Prepare AWS CLI Container') {
+        stage('Verify AWS Access') {
             steps {
-                echo "Preparando container AWS CLI..."
+                echo "Verificando acesso à AWS..."
+                // Define AWS credentials como variáveis de ambiente para este estágio
                 withCredentials([
-                    string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY'),
-                    string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_KEY')
+                    string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
+                    string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
                 ]) {
-                    // Criar arquivo de script para executar comandos AWS
-                    sh """
-                    cat > ${WORKSPACE}/aws-cli.sh << 'EOL'
-                        #!/bin/bash
-                        # Script para executar AWS CLI em um container Docker
-
-                        # O primeiro argumento é o comando AWS a ser executado
-                        AWS_COMMAND="\$@"
-
-                        # Executar o comando AWS dentro do container
-                        docker run --rm \
-                        -e AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY}" \
-                        -e AWS_SECRET_ACCESS_KEY="${AWS_SECRET_KEY}" \
-                        -e AWS_DEFAULT_REGION="${AWS_REGION}" \
-                        -v \$(pwd):/workspace \
-                        --workdir /workspace \
-                        amazon/aws-cli:latest \
-                        \$AWS_COMMAND
-                    EOL
-                    
-                    chmod 777 ${WORKSPACE}/aws-cli.sh
-                    """
-                    
-                    // Testar o script
-                    sh "${WORKSPACE}/aws-cli.sh --version"
-                    sh "${WORKSPACE}/aws-cli.sh sts get-caller-identity || (echo 'Falha na configuração AWS' && exit 1)"
+                    // Usa a imagem Docker da AWS sem script intermediário
+                    sh '''
+                    echo "Testando acesso à AWS usando Docker..."
+                    docker run --rm \
+                      -e AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID \
+                      -e AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY \
+                      -e AWS_DEFAULT_REGION=${AWS_REGION} \
+                      amazon/aws-cli:latest sts get-caller-identity
+                    '''
                 }
             }
         }
@@ -146,18 +130,24 @@ pipeline {
             steps {
                 echo "Enviando imagem para ECR..."
                 withCredentials([
-                    string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY'),
-                    string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_KEY')
+                    string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
+                    string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
                 ]) {
                     sh '''
-                    # Obter token de login do ECR usando nosso wrapper
-                    ECR_TOKEN=$(${WORKSPACE}/aws-cli.sh ecr get-login-password --region ${AWS_REGION})
+                    # Obter token de login do ECR usando Docker
+                    echo "Obtendo token de autenticação do ECR..."
+                    ECR_TOKEN=$(docker run --rm \
+                      -e AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID \
+                      -e AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY \
+                      -e AWS_DEFAULT_REGION=${AWS_REGION} \
+                      amazon/aws-cli:latest ecr get-login-password --region ${AWS_REGION})
                     
                     # Login no ECR
+                    echo "Fazendo login no ECR..."
                     echo $ECR_TOKEN | docker login --username AWS --password-stdin ${ECR_REPOSITORY%/*}
                     
-                    echo "Marcando e enviando imagem..."
                     # Tag e push
+                    echo "Marcando e enviando imagem..."
                     docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${ECR_REPOSITORY}:${DOCKER_TAG}
                     docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${ECR_REPOSITORY}:latest
                     
@@ -174,41 +164,48 @@ pipeline {
             steps {
                 echo "Implantando no ECS..."
                 withCredentials([
-                    string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY'),
-                    string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_KEY')
+                    string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
+                    string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
                 ]) {
                     sh '''
                     echo "Atualizando serviço ECS: ${ECS_SERVICE} no cluster ${ECS_CLUSTER}"
-                    
-                    # Atualizar serviço ECS usando nosso wrapper
-                    ${WORKSPACE}/aws-cli.sh ecs update-service \
+                    # Atualizar serviço ECS usando Docker
+                    docker run --rm \
+                      -e AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID \
+                      -e AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY \
+                      -e AWS_DEFAULT_REGION=${AWS_REGION} \
+                      amazon/aws-cli:latest ecs update-service \
                         --cluster ${ECS_CLUSTER} \
                         --service ${ECS_SERVICE} \
                         --force-new-deployment \
                         --region ${AWS_REGION}
                     
                     echo "Aguardando estabilização do serviço ECS..."
-                    
-                    # Em vez de esperar por "services-stable", vamos verificar o status manualmente
-                    # pois o "wait" pode não funcionar bem no container
+                    # Verificar status do serviço regularmente
                     for i in {1..20}; do
                         echo "Verificando status do serviço (tentativa $i/20)..."
-                        SERVICE_STATUS=$(${WORKSPACE}/aws-cli.sh ecs describe-services \
+                        
+                        # Obter status do serviço
+                        SERVICE_JSON=$(docker run --rm \
+                          -e AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID \
+                          -e AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY \
+                          -e AWS_DEFAULT_REGION=${AWS_REGION} \
+                          amazon/aws-cli:latest ecs describe-services \
                             --cluster ${ECS_CLUSTER} \
                             --services ${ECS_SERVICE} \
-                            --region ${AWS_REGION} \
-                            --query 'services[0].deployments' \
-                            --output json)
+                            --region ${AWS_REGION})
                         
-                        # Se houver apenas uma implantação ativa, o serviço está estável
-                        PRIMARY_COUNT=$(echo $SERVICE_STATUS | grep -o '"status": "PRIMARY"' | wc -l)
-                        if [ "$PRIMARY_COUNT" == "1" ]; then
-                            echo "Serviço estável com uma implantação primária!"
+                        # Extrair número de deployments
+                        echo "$SERVICE_JSON" > service-status.json
+                        DEPLOYMENTS_COUNT=$(grep -o '"status": "PRIMARY"' service-status.json | wc -l)
+                        
+                        if [ "$DEPLOYMENTS_COUNT" = "1" ]; then
+                            echo "Serviço estabilizado com sucesso!"
                             break
+                        else
+                            echo "Serviço ainda em implantação, aguardando 15s..."
+                            sleep 15
                         fi
-                        
-                        echo "Serviço ainda em implantação, aguardando 30s..."
-                        sleep 30
                     done
                     
                     echo "Implantação concluída!"
