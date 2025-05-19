@@ -38,36 +38,40 @@ pipeline {
         }
         
         stage('Code Analysis') {
-            // when {
-            //     expression { return false } // Desabilitado temporariamente
-            // }
             steps {
+                echo "Executando análise de código com SonarQube..."
                 withSonarQubeEnv('SonarQube') {
                     dir('sample-app') {
-                        sh '''
-                        echo "Executando análise de código com SonarQube..."
-                        # Verificar se sonar-scanner está instalado
-                        which sonar-scanner || echo "Sonar Scanner não disponível"
-                        
-                        # Criar arquivo sonar-project.properties
-                        cat > sonar-project.properties << EOL
-                        # Identificação do projeto
-                        sonar.projectKey=sample-app
-                        sonar.projectName=Sample App
-                        sonar.projectVersion=${APP_VERSION}
+                        withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+                            sh '''
+                            # Criar arquivo sonar-project.properties
+                            cat > sonar-project.properties << EOL
+                                # Identificação do projeto
+                                sonar.projectKey=sample-app
+                                sonar.projectName=Sample App
+                                sonar.projectVersion=${APP_VERSION}
+                                sonar.host.url=http://35.171.200.117:9000
+                                sonar.login=${SONAR_TOKEN}
 
-                        # Caminho para os arquivos de código
-                        sonar.sources=.
-                        sonar.python.coverage.reportPaths=coverage.xml
-                        sonar.python.xunit.reportPath=test-results.xml
+                                # Caminho para os arquivos de código
+                                sonar.sources=.
+                                sonar.python.coverage.reportPaths=coverage.xml
+                                sonar.python.xunit.reportPath=test-results.xml
 
-                        # Codificação do código-fonte
-                        sonar.sourceEncoding=UTF-8
-                        EOL
-                        
-                        # Tentar executar análise
-                        sonar-scanner || echo "Falha ao executar o Sonar Scanner"
-                        '''
+                                # Codificação do código-fonte
+                                sonar.sourceEncoding=UTF-8
+                            EOL
+                            
+                            # Executar SonarScanner usando container Docker com rede do host
+                            echo "Executando SonarScanner via Docker..."
+                            docker run --rm \
+                            --network=host \
+                            -e SONAR_HOST_URL=http://35.171.200.117:9000 \
+                            -e SONAR_LOGIN=${SONAR_TOKEN} \
+                            -v "$(pwd):/usr/src" \
+                            sonarsource/sonar-scanner-cli:latest
+                            '''
+                        }
                     }
                 }
             }
