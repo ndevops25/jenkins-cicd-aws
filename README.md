@@ -1,5 +1,5 @@
 Pipeline CI/CD com Jenkins, SonarQube, ECR e ECS 🚀
-========================================
+===================================================
 
 Este projeto implementa um pipeline completo de CI/CD usando Jenkins para uma aplicação Python Flask, com deploy automatizado na AWS utilizando Docker, ECR (Elastic Container Registry) e ECS (Elastic Container Service). Inclui análise de código com SonarQube para manter a qualidade do código.
 
