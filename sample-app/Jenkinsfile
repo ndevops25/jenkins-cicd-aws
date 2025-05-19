@@ -13,108 +13,42 @@ pipeline {
         SONAR_SERVER = 'http://35.171.200.117:9000'
         SONAR_PROJECT = 'sample-app'
         HOME = "${WORKSPACE}"
-        PATH = "$PATH:/usr/local/bin"
     }
     
     stages {
-        stage('Install AWS CLI') {
+        stage('Prepare AWS CLI Container') {
             steps {
-                echo "Instalando AWS CLI..."
-                sh '''
-                # Verificar se AWS CLI já está instalado
-                which aws && aws --version && echo "AWS CLI já instalado" && exit 0
-                
-                # Instalar AWS CLI globalmente para o usuário Jenkins
-                echo "Instalando AWS CLI..."
-                curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-                unzip -o awscliv2.zip
-                sudo ./aws/install --update
-                
-                # Verificar instalação
-                which aws
-                aws --version
-                
-                # Se não conseguir instalar globalmente, instalar localmente
-                if [ $? -ne 0 ]; then
-                    echo "Instalando AWS CLI localmente..."
-                    ./aws/install -i ${WORKSPACE}/aws-cli -b ${WORKSPACE}/aws-cli/bin
-                    export PATH=${WORKSPACE}/aws-cli/bin:$PATH
-                    echo "export PATH=${WORKSPACE}/aws-cli/bin:$PATH" > ${WORKSPACE}/aws-path.sh
-                    chmod +x ${WORKSPACE}/aws-path.sh
-                    
-                    # Verificar instalação local
-                    source ${WORKSPACE}/aws-path.sh
-                    aws --version
-                fi
-                '''
-            }
-        }
-        
-        stage('Setup AWS Config') {
-            steps {
-                echo "Configurando AWS CLI..."
-                sh '''
-                # Se temos um script de path, carregamos
-                if [ -f "${WORKSPACE}/aws-path.sh" ]; then
-                    source ${WORKSPACE}/aws-path.sh
-                fi
-                
-                # Limpar configurações anteriores
-                rm -rf ${WORKSPACE}/.aws 2>/dev/null || true
-                mkdir -p ${WORKSPACE}/.aws
-                
-                # Criar arquivo de configuração
-                cat > ${WORKSPACE}/.aws/config << EOL
-                [default]
-                region = ${AWS_REGION}
-                output = json
-                EOL
-                
-                # Verificar localização do AWS CLI
-                which aws || echo "AWS CLI não encontrado no PATH"
-                '''
-            }
-        }
-        
-        stage('Setup AWS Credentials') {
-            steps {
-                echo "Configurando credenciais AWS..."
+                echo "Preparando container AWS CLI..."
                 withCredentials([
                     string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY'),
                     string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_KEY')
                 ]) {
-                    sh '''
-                    # Se temos um script de path, carregamos
-                    if [ -f "${WORKSPACE}/aws-path.sh" ]; then
-                        source ${WORKSPACE}/aws-path.sh
-                    fi
-                    
-                    # Criar arquivo de credenciais
-                    cat > ${WORKSPACE}/.aws/credentials << EOL
-                    [default]
-                    aws_access_key_id = ${AWS_ACCESS_KEY}
-                    aws_secret_access_key = ${AWS_SECRET_KEY}
+                    // Criar arquivo de script para executar comandos AWS
+                    sh """
+                    cat > ${WORKSPACE}/aws-cli.sh << 'EOL'
+                        #!/bin/bash
+                        # Script para executar AWS CLI em um container Docker
+
+                        # O primeiro argumento é o comando AWS a ser executado
+                        AWS_COMMAND="\$@"
+
+                        # Executar o comando AWS dentro do container
+                        docker run --rm \
+                        -e AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY}" \
+                        -e AWS_SECRET_ACCESS_KEY="${AWS_SECRET_KEY}" \
+                        -e AWS_DEFAULT_REGION="${AWS_REGION}" \
+                        -v \$(pwd):/workspace \
+                        --workdir /workspace \
+                        amazon/aws-cli:latest \
+                        \$AWS_COMMAND
                     EOL
                     
-                    # Também exportamos como variáveis de ambiente
-                    echo "export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY}" > ${WORKSPACE}/aws-env.sh
-                    echo "export AWS_SECRET_ACCESS_KEY=${AWS_SECRET_KEY}" >> ${WORKSPACE}/aws-env.sh
-                    echo "export AWS_DEFAULT_REGION=${AWS_REGION}" >> ${WORKSPACE}/aws-env.sh
-                    echo "export AWS_CONFIG_FILE=${WORKSPACE}/.aws/config" >> ${WORKSPACE}/aws-env.sh
-                    echo "export AWS_SHARED_CREDENTIALS_FILE=${WORKSPACE}/.aws/credentials" >> ${WORKSPACE}/aws-env.sh
+                    chmod +x ${WORKSPACE}/aws-cli.sh
+                    """
                     
-                    # Se temos um script de path, adicionamos
-                    if [ -f "${WORKSPACE}/aws-path.sh" ]; then
-                        cat ${WORKSPACE}/aws-path.sh >> ${WORKSPACE}/aws-env.sh
-                    fi
-                    
-                    chmod +x ${WORKSPACE}/aws-env.sh
-                    
-                    # Testar configuração
-                    source ${WORKSPACE}/aws-env.sh
-                    aws --version
-                    aws sts get-caller-identity || echo "Falha na autenticação AWS"
-                    '''
+                    // Testar o script
+                    sh "${WORKSPACE}/aws-cli.sh --version"
+                    sh "${WORKSPACE}/aws-cli.sh sts get-caller-identity || (echo 'Falha na configuração AWS' && exit 1)"
                 }
             }
         }
@@ -211,55 +145,75 @@ pipeline {
         stage('Push to ECR') {
             steps {
                 echo "Enviando imagem para ECR..."
-                sh '''
-                source ${WORKSPACE}/aws-env.sh
-                
-                # Verificar AWS CLI
-                aws --version
-                
-                # Login no ECR
-                echo "Fazendo login no ECR..."
-                aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REPOSITORY%/*}
-                
-                echo "Marcando e enviando imagem..."
-                # Tag e push
-                docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${ECR_REPOSITORY}:${DOCKER_TAG}
-                docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${ECR_REPOSITORY}:latest
-                
-                docker push ${ECR_REPOSITORY}:${DOCKER_TAG} || (echo "Falha ao enviar imagem para ECR" && exit 1)
-                docker push ${ECR_REPOSITORY}:latest || (echo "Falha ao enviar tag latest para ECR" && exit 1)
-                
-                echo "Imagem enviada com sucesso para o ECR!"
-                '''
+                withCredentials([
+                    string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY'),
+                    string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_KEY')
+                ]) {
+                    sh '''
+                    # Obter token de login do ECR usando nosso wrapper
+                    ECR_TOKEN=$(${WORKSPACE}/aws-cli.sh ecr get-login-password --region ${AWS_REGION})
+                    
+                    # Login no ECR
+                    echo $ECR_TOKEN | docker login --username AWS --password-stdin ${ECR_REPOSITORY%/*}
+                    
+                    echo "Marcando e enviando imagem..."
+                    # Tag e push
+                    docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${ECR_REPOSITORY}:${DOCKER_TAG}
+                    docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${ECR_REPOSITORY}:latest
+                    
+                    docker push ${ECR_REPOSITORY}:${DOCKER_TAG} || (echo "Falha ao enviar imagem para ECR" && exit 1)
+                    docker push ${ECR_REPOSITORY}:latest || (echo "Falha ao enviar tag latest para ECR" && exit 1)
+                    
+                    echo "Imagem enviada com sucesso para o ECR!"
+                    '''
+                }
             }
         }
         
         stage('Deploy to ECS') {
             steps {
                 echo "Implantando no ECS..."
-                sh '''
-                source ${WORKSPACE}/aws-env.sh
-                
-                # Verificar AWS CLI
-                aws --version
-                
-                echo "Atualizando serviço ECS: ${ECS_SERVICE} no cluster ${ECS_CLUSTER}"
-                # Atualizar serviço ECS
-                aws ecs update-service \
-                    --cluster ${ECS_CLUSTER} \
-                    --service ${ECS_SERVICE} \
-                    --force-new-deployment \
-                    --region ${AWS_REGION}
-                
-                echo "Aguardando estabilização do serviço ECS..."
-                # Aguardar deploy
-                aws ecs wait services-stable \
-                    --cluster ${ECS_CLUSTER} \
-                    --services ${ECS_SERVICE} \
-                    --region ${AWS_REGION} || echo "Tempo excedido aguardando estabilidade do ECS"
-                
-                echo "Implantação concluída!"
-                '''
+                withCredentials([
+                    string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY'),
+                    string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_KEY')
+                ]) {
+                    sh '''
+                    echo "Atualizando serviço ECS: ${ECS_SERVICE} no cluster ${ECS_CLUSTER}"
+                    
+                    # Atualizar serviço ECS usando nosso wrapper
+                    ${WORKSPACE}/aws-cli.sh ecs update-service \
+                        --cluster ${ECS_CLUSTER} \
+                        --service ${ECS_SERVICE} \
+                        --force-new-deployment \
+                        --region ${AWS_REGION}
+                    
+                    echo "Aguardando estabilização do serviço ECS..."
+                    
+                    # Em vez de esperar por "services-stable", vamos verificar o status manualmente
+                    # pois o "wait" pode não funcionar bem no container
+                    for i in {1..20}; do
+                        echo "Verificando status do serviço (tentativa $i/20)..."
+                        SERVICE_STATUS=$(${WORKSPACE}/aws-cli.sh ecs describe-services \
+                            --cluster ${ECS_CLUSTER} \
+                            --services ${ECS_SERVICE} \
+                            --region ${AWS_REGION} \
+                            --query 'services[0].deployments' \
+                            --output json)
+                        
+                        # Se houver apenas uma implantação ativa, o serviço está estável
+                        PRIMARY_COUNT=$(echo $SERVICE_STATUS | grep -o '"status": "PRIMARY"' | wc -l)
+                        if [ "$PRIMARY_COUNT" == "1" ]; then
+                            echo "Serviço estável com uma implantação primária!"
+                            break
+                        fi
+                        
+                        echo "Serviço ainda em implantação, aguardando 30s..."
+                        sleep 30
+                    done
+                    
+                    echo "Implantação concluída!"
+                    '''
+                }
             }
         }
     }
