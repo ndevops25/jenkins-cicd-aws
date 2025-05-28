@@ -180,7 +180,7 @@ def health():
 @app.route('/info')
 def info():
     return jsonify({
-        'app_name': 'sample-app',
+        'app_name': 'Jenkins CI/CD Azure and AWS Pipeline',
         'version': VERSION,
         'environment': os.environ.get('ENVIRONMENT', 'development'),
         'port': PORT

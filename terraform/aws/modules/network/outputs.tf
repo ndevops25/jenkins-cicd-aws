@@ -37,15 +37,15 @@ output "private_subnet_ids" {
   value       = [aws_subnet.private_1.id, aws_subnet.private_2.id]
 }
 
-output "private_subnet_arns" {
-  description = "Lista de ARNs das subnets privadas"
-  value       = [aws_subnet.private_1.arn, aws_subnet.private_2.arn]
-}
+# output "private_subnet_arns" {
+#   description = "Lista de ARNs das subnets privadas"
+#   value       = [aws_subnet.private_1.arn, aws_subnet.private_2.arn]
+# }
 
-output "private_subnet_cidr_blocks" {
-  description = "Lista de CIDR blocks das subnets privadas"
-  value       = [aws_subnet.private_1.cidr_block, aws_subnet.private_2.cidr_block]
-}
+# output "private_subnet_cidr_blocks" {
+#   description = "Lista de CIDR blocks das subnets privadas"
+#   value       = [aws_subnet.private_1.cidr_block, aws_subnet.private_2.cidr_block]
+# }
 
 # Outputs individuais (para compatibilidade com código legado)
 output "public_subnet_1_id" {
@@ -58,15 +58,15 @@ output "public_subnet_2_id" {
   value       = aws_subnet.public_2.id
 }
 
-output "private_subnet_1_id" {
-  description = "ID da primeira subnet privada"
-  value       = aws_subnet.private_1.id
-}
+# output "private_subnet_1_id" {
+#   description = "ID da primeira subnet privada"
+#   value       = aws_subnet.private_1.id
+# }
 
-output "private_subnet_2_id" {
-  description = "ID da segunda subnet privada"
-  value       = aws_subnet.private_2.id
-}
+# output "private_subnet_2_id" {
+#   description = "ID da segunda subnet privada"
+#   value       = aws_subnet.private_2.id
+# }
 
 # Internet Gateway
 output "internet_gateway_id" {
@@ -96,21 +96,21 @@ output "nat_eip_ids" {
   value       = [aws_eip.nat_1.id]
 }
 
-output "nat_eip_public_ips" {
-  description = "Lista de endereços IP públicos dos Elastic IPs"
-  value       = [aws_eip.nat_1.public_ip]
-}
+# output "nat_eip_public_ips" {
+#   description = "Lista de endereços IP públicos dos Elastic IPs"
+#   value       = [aws_eip.nat_1.public_ip]
+# }
 
-# Route Tables
-output "public_route_table_id" {
-  description = "ID da route table pública"
-  value       = aws_route_table.public.id
-}
+# # Route Tables
+# output "public_route_table_id" {
+#   description = "ID da route table pública"
+#   value       = aws_route_table.public.id
+# }
 
-output "private_route_table_id" {
-  description = "ID da route table privada"
-  value       = aws_route_table.private.id
-}
+# output "private_route_table_id" {
+#   description = "ID da route table privada"
+#   value       = aws_route_table.private.id
+# }
 
 # Availability Zones
 output "availability_zones" {

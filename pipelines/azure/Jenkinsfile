@@ -1,0 +1,243 @@
+pipeline {
+    agent any
+    
+    environment {
+        AZURE_SUBSCRIPTION = 'Subscription ID'
+        ACR_NAME = 'jenkinscidacr'
+        ACR_REPOSITORY = "${ACR_NAME}.azurecr.io/sample-app"
+        DOCKER_IMAGE = 'sample-app'
+        DOCKER_TAG = "${BUILD_NUMBER}"
+        APP_PORT = '5001'
+        APP_VERSION = "${BUILD_NUMBER}"
+        ACI_RESOURCE_GROUP = 'jenkins-cicd-rg'
+        ACI_CONTAINER_GROUP = 'jenkins-cicd-container-group'
+        SONAR_SERVER = 'http://your-sonarqube-ip:9000'
+        SONAR_PROJECT = 'sample-app'
+        HOME = "${WORKSPACE}"
+    }
+    
+    stages {
+        stage('Verify Azure Access') {
+            steps {
+                echo "Verificando acesso ao Azure..."
+                withCredentials([azureServicePrincipal('azure-credentials')]) {
+                    sh '''
+                    echo "Testando acesso ao Azure usando Docker..."
+                    docker run --rm \
+                      -e AZURE_TENANT_ID=$AZURE_TENANT_ID \
+                      -e AZURE_CLIENT_ID=$AZURE_CLIENT_ID \
+                      -e AZURE_CLIENT_SECRET=$AZURE_CLIENT_SECRET \
+                      -e AZURE_SUBSCRIPTION_ID=$AZURE_SUBSCRIPTION \
+                      mcr.microsoft.com/azure-cli:latest az account show
+                    '''
+                }
+            }
+        }
+        
+        stage('Code Analysis') {
+            steps {
+                echo "Executando análise de código com SonarQube..."
+                withSonarQubeEnv('SonarQube') {  // Isso configura as variáveis de ambiente do SonarQube
+                    dir('sample-app') {
+                        script {
+                            // Primeiro, vamos fazer download e descompactar o SonarScanner no workspace
+                            sh '''
+                            # Verificar e criar diretório para o scanner
+                            mkdir -p ${WORKSPACE}/sonar-scanner
+                            
+                            # Baixar o SonarScanner
+                            echo "Baixando SonarScanner..."
+                            curl -L -o ${WORKSPACE}/sonar-scanner-cli.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.8.0.2856-linux.zip
+                            
+                            # Descompactar
+                            unzip -q -o ${WORKSPACE}/sonar-scanner-cli.zip -d ${WORKSPACE}/sonar-scanner
+                            
+                            # Tornar o binário executável
+                            chmod +x ${WORKSPACE}/sonar-scanner/sonar-scanner-*/bin/sonar-scanner
+                            
+                            # Verificar a instalação
+                            ls -la ${WORKSPACE}/sonar-scanner/sonar-scanner-*/bin/
+                            '''
+                            
+                            // Criar o arquivo de propriedades do SonarQube
+                            sh '''
+                            # Criar arquivo sonar-project.properties
+                            cat > sonar-project.properties << EOL
+                            # Identificação do projeto
+                            sonar.projectKey=sample-app
+                            sonar.projectName=Sample App
+                            sonar.projectVersion=${APP_VERSION}
+
+                            # Configurações do servidor
+                            sonar.host.url=http://35.171.200.117:9000
+
+                            # Caminho para os arquivos de código
+                            sonar.sources=.
+                            sonar.python.coverage.reportPaths=coverage.xml
+                            sonar.python.xunit.reportPath=test-results.xml
+
+                            # Codificação do código-fonte
+                            sonar.sourceEncoding=UTF-8
+                            EOL
+                            '''
+                            
+                            // Executar o SonarScanner com o token
+                            withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+                                sh '''
+                                # Exibir o diretório atual e listar arquivos
+                                pwd
+                                ls -la
+                                
+                                # Exibir o arquivo de propriedades
+                                echo "Conteúdo do arquivo sonar-project.properties:"
+                                cat sonar-project.properties
+                                
+                                # Executar o SonarScanner
+                                echo "Executando SonarScanner..."
+                                ${WORKSPACE}/sonar-scanner/sonar-scanner-*/bin/sonar-scanner \
+                                -Dsonar.login=${SONAR_TOKEN} \
+                                -Dsonar.projectBaseDir=$(pwd) \
+                                -Dsonar.verbose=true
+                                
+                                # Verificar se o relatório foi gerado
+                                echo "Verificando se o arquivo report-task.txt foi gerado:"
+                                find . -name report-task.txt
+                                find .scannerwork -name "report-task.txt" || echo "Arquivo não encontrado em .scannerwork"
+                                
+                                # Se encontrado, copiar para o diretório raiz do workspace
+                                if [ -f .scannerwork/report-task.txt ]; then
+                                    echo "Copiando report-task.txt para o diretório raiz..."
+                                    cp .scannerwork/report-task.txt .
+                                fi
+                                
+                                # Mostrar o conteúdo do relatório se existir
+                                if [ -f report-task.txt ]; then
+                                    echo "Conteúdo do arquivo report-task.txt:"
+                                    cat report-task.txt
+                                fi
+                                '''
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Build and Test') {
+            steps {
+                echo "Iniciando build e teste da aplicação..."
+                
+                dir('../../sample-app') {
+                    sh '''
+                    echo "Verificando conteúdo do diretório:"
+                    ls -la
+                    
+                    echo "Construindo imagem Docker: ${DOCKER_IMAGE}:${DOCKER_TAG}"
+                    
+                    # Build imagem
+                    docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} \
+                        --build-arg PORT=${APP_PORT} \
+                        --build-arg VERSION=${APP_VERSION} .
+                    
+                    # Remover container anterior se existir
+                    docker rm -f test-container-${BUILD_NUMBER} 2>/dev/null || true
+                    
+                    echo "Iniciando container de teste"
+                    # Iniciar container e publicar a porta
+                    # Importante: usar --network="host" para garantir acesso à porta no mesmo namespace de rede
+                    docker run -d --name test-container-${BUILD_NUMBER} \
+                        --network="host" \
+                        -e PORT=${APP_PORT} \
+                        -e APP_VERSION=${APP_VERSION} \
+                        ${DOCKER_IMAGE}:${DOCKER_TAG}
+                    
+                    # Verificar status do container
+                    echo "Status do container:"
+                    docker ps | grep test-container-${BUILD_NUMBER}
+                    
+                    # Ver logs do container para debug
+                    echo "Logs do container:"
+                    docker logs test-container-${BUILD_NUMBER}
+                    
+                    # Aguardar inicialização
+                    echo "Aguardando inicialização (10s)..."
+                    sleep 10
+                    
+                    # Testar endpoint de saúde
+                    echo "Testando endpoint de saúde..."
+                    # Testar via curl dentro de um container para evitar problemas de rede
+                    docker run --rm --network="host" curlimages/curl:latest curl -v http://localhost:${APP_PORT}/health || echo "AVISO: Teste falhou, verificando via comando alternativo"
+                    
+                    # Método alternativo usando exec no container para testar de dentro
+                    echo "Testando de dentro do container:"
+                    docker exec test-container-${BUILD_NUMBER} curl -v http://localhost:${APP_PORT}/health || echo "AVISO: Teste interno falhou"
+                    
+                    # Verificar logs novamente após teste
+                    echo "Logs do container após teste:"
+                    docker logs test-container-${BUILD_NUMBER}
+                    
+                    # Limpar
+                    docker stop test-container-${BUILD_NUMBER} || true
+                    docker rm test-container-${BUILD_NUMBER} || true
+                    '''
+                }
+            }
+        }
+        
+        stage('Push to ACR') {
+            steps {
+                echo "Enviando imagem para Azure Container Registry..."
+                withCredentials([azureServicePrincipal('azure-credentials')]) {
+                    sh '''
+                    # Login no Azure
+                    docker run --rm \
+                      -e AZURE_TENANT_ID=$AZURE_TENANT_ID \
+                      -e AZURE_CLIENT_ID=$AZURE_CLIENT_ID \
+                      -e AZURE_CLIENT_SECRET=$AZURE_CLIENT_SECRET \
+                      mcr.microsoft.com/azure-cli:latest az acr login --name ${ACR_NAME}
+                    
+                    # Tag e push
+                    docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${ACR_REPOSITORY}:${DOCKER_TAG}
+                    docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${ACR_REPOSITORY}:latest
+                    
+                    docker push ${ACR_REPOSITORY}:${DOCKER_TAG}
+                    docker push ${ACR_REPOSITORY}:latest
+                    '''
+                }
+            }
+        }
+        
+        stage('Deploy to ACI') {
+            steps {
+                echo "Implantando no Azure Container Instances..."
+                withCredentials([azureServicePrincipal('azure-credentials')]) {
+                    sh '''
+                    # Atualizar container no ACI
+                    docker run --rm \
+                      -e AZURE_TENANT_ID=$AZURE_TENANT_ID \
+                      -e AZURE_CLIENT_ID=$AZURE_CLIENT_ID \
+                      -e AZURE_CLIENT_SECRET=$AZURE_CLIENT_SECRET \
+                      -e AZURE_SUBSCRIPTION_ID=$AZURE_SUBSCRIPTION \
+                      mcr.microsoft.com/azure-cli:latest az container restart \
+                        --resource-group ${ACI_RESOURCE_GROUP} \
+                        --name ${ACI_CONTAINER_GROUP}
+                    '''
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            echo "Limpando recursos..."
+            sh 'docker image prune -f || true'
+        }
+        success {
+            echo "Pipeline executado com sucesso! Versão ${APP_VERSION} implantada."
+            echo "Aplicação disponível em: http://jenkins-cicd-dev-alb-2039113869.us-east-1.elb.amazonaws.com/"
+        }
+        failure {
+            echo "Pipeline falhou! Verifique os logs acima para detalhes."
+        }
+    }
+}

@@ -45,4 +45,4 @@
 # Temporários
 **/*.tmp
 **/*.temp
-**/*.bak
+**/*.bakssh-keys/
