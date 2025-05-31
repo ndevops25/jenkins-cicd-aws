@@ -63,6 +63,7 @@ module "ecr" {
 }
 
 # Módulo ECS
+# Onde está instalado o jenkins e o sonarqube atualmente
 module "ecs" {
   source = "./modules/ecs"
 
