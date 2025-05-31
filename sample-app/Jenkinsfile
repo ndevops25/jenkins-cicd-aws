@@ -41,7 +41,7 @@ pipeline {
             steps {
                 echo "Executando análise de código com SonarQube..."
                 withSonarQubeEnv('SonarQube') {  // Isso configura as variáveis de ambiente do SonarQube
-                    dir('sample-app') {
+                    dir('../../sample-app') {
                         script {
                             // Primeiro, vamos fazer download e descompactar o SonarScanner no workspace
                             sh '''
@@ -130,7 +130,7 @@ pipeline {
             steps {
                 echo "Iniciando build e teste da aplicação..."
                 
-                dir('sample-app') {
+                dir('../../sample-app') {
                     sh '''
                     echo "Verificando conteúdo do diretório:"
                     ls -la

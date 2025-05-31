@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🕷️ OWASP ZAP Security Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', sans-serif; background: #f5f5f5; }
+        .header { background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%); color: white; padding: 2rem; text-align: center; }
+        .container { max-width: 1200px; margin: 2rem auto; padding: 0 2rem; }
+        .card { background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin: 1rem 0; padding: 1.5rem; }
+        .scan-form { display: flex; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap; }
+        .scan-form input { flex: 1; min-width: 300px; padding: 0.75rem; border: 1px solid #ddd; border-radius: 4px; }
+        .scan-form select { padding: 0.75rem; border: 1px solid #ddd; border-radius: 4px; }
+        .btn { padding: 0.75rem 1.5rem; background: #e74c3c; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        .btn:hover { background: #c0392b; }
+        .btn:disabled { background: #bdc3c7; cursor: not-allowed; }
+        .reports-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; }
+        .report-card { border-left: 4px solid #e74c3c; }
+        .status-indicator { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 0.5rem; }
+        .status-running { background: #27ae60; }
+        .status-stopped { background: #e74c3c; }
+        .status-scanning { background: #f39c12; animation: pulse 1s infinite; }
+        .stats { display: flex; justify-content: space-around; text-align: center; flex-wrap: wrap; }
+        .stat { padding: 1rem; }
+        .stat-number { font-size: 2rem; font-weight: bold; color: #e74c3c; }
+        .loading { display: none; text-align: center; padding: 2rem; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .risk-high { color: #e74c3c; font-weight: bold; }
+        .risk-medium { color: #f39c12; }
+        .risk-low { color: #27ae60; }
+    </style>
+    <script>
+        async function scanTarget() {
+            const targetInput = document.getElementById('targetInput');
+            const scanTypeSelect = document.getElementById('scanType');
+            const target = targetInput.value.trim();
+            const scanType = scanTypeSelect.value;
+            
+            if (!target) {
+                alert('Please enter a target URL');
+                return;
+            }
+            
+            const loading = document.getElementById('loading');
+            const scanBtn = document.getElementById('scanBtn');
+            
+            loading.style.display = 'block';
+            scanBtn.disabled = true;
+            
+            try {
+                const response = await fetch('/scan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ target: target, scan_type: scanType })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    alert('Security scan started! This may take several minutes.');
+                    setTimeout(() => location.reload(), 5000);
+                } else {
+                    alert('Scan failed: ' + result.error);
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            } finally {
+                loading.style.display = 'none';
+                scanBtn.disabled = false;
+            }
+        }
+        
+        // Auto-refresh status
+        setInterval(async () => {
+            try {
+                const response = await fetch('/status');
+                const status = await response.json();
+                updateStatus(status);
+            } catch (error) {
+                console.error('Status update failed:', error);
+            }
+        }, 5000);
+        
+        function updateStatus(status) {
+            const indicator = document.getElementById('statusIndicator');
+            const text = document.getElementById('statusText');
+            
+            if (status.scanning) {
+                indicator.className = 'status-indicator status-scanning';
+                text.textContent = 'Scanning in progress...';
+            } else if (status.running) {
+                indicator.className = 'status-indicator status-running';
+                text.textContent = 'ZAP Ready';
+            } else {
+                indicator.className = 'status-indicator status-stopped';
+                text.textContent = 'ZAP Stopped';
+            }
+        }
+    </script>
+</head>
+<body>
+    <div class="header">
+        <h1>🕷️ OWASP ZAP Security Dashboard</h1>
+        <p>Web Application Security Testing</p>
+        <div style="margin-top: 1rem;">
+            <span id="statusIndicator" class="status-indicator {% if zap_status.running %}status-running{% else %}status-stopped{% endif %}"></span>
+            <span id="statusText">{% if zap_status.running %}ZAP Ready{% else %}ZAP Stopped{% endif %}</span>
+        </div>
+    </div>
+    
+    <div class="container">
+        <div class="card">
+            <h2>🎯 Security Scan</h2>
+            <div class="scan-form">
+                <input type="url" id="targetInput" placeholder="Enter target URL (e.g., https://example.com)" />
+                <select id="scanType">
+                    <option value="quick">Quick Scan (Spider only)</option>
+                    <option value="full">Full Scan (Spider + Active)</option>
+                </select>
+                <button class="btn" id="scanBtn" onclick="scanTarget()" {% if not zap_status.running %}disabled{% endif %}>
+                    🕷️ Start Scan
+                </button>
+            </div>
+            <div id="loading" class="loading">
+                <p>⏳ Security scan in progress... This may take several minutes.</p>
+            </div>
+        </div>
+        
+        <div class="card">
+            <h2>📊 Scan Statistics</h2>
+            <div class="stats">
+                <div class="stat">
+                    <div class="stat-number">{{ reports|length }}</div>
+                    <div>Total Scans</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-number">{{ reports|sum(attribute='alerts') }}</div>
+                    <div>Total Alerts</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-number risk-high">{{ reports|sum(attribute='high_alerts') }}</div>
+                    <div>High Risk</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <h2>📋 Recent Security Scans</h2>
+            {% if reports %}
+                <div class="reports-grid">
+                    {% for report in reports %}
+                    <div class="card report-card">
+                        <h3>🎯 {{ report.target }}</h3>
+                        <p><strong>Scanned:</strong> {{ report.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</p>
+                        <p><strong>Total Alerts:</strong> {{ report.alerts }}</p>
+                        <p><strong>High Risk:</strong> <span class="risk-high">{{ report.high_alerts }}</span></p>
+                        <a href="/report/{{ report.filename }}" class="btn" style="display: inline-block; margin-top: 1rem; text-decoration: none;">📄 View Report</a>
+                    </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p>📭 No scans available. Start by scanning a web application above.</p>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>

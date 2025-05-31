@@ -86,3 +86,115 @@ module "ecs" {
   private_subnet_ids = module.network.private_subnet_ids  # Se você tiver subnet privada
   public_subnet_ids  = module.network.public_subnet_ids
 }
+
+# module "jenkins_pipeline_vm" {
+#   source                = "./modules/devsecops/pipeline/jenkins"
+#   resource_group_name   = module.resource_group.name
+#   location              = var.location
+#   prefix                = "${var.prefix}-jenkins"
+#   subnet_id             = module.networking.app_subnet_id
+#   vm_size               = var.jenkins_vm_size
+#   admin_username        = var.admin_username
+#   admin_password        = var.admin_password
+#   disable_password_auth = false
+#   admin_ssh_key_data    = tls_private_key.ssh_key.public_key_openssh
+#   public_ip_name        = "${var.prefix}-jenkins-pip"
+#   private_ip_address    = var.jenkins_private_ip
+#   custom_data           = base64encode(join("\n", [
+#     file("${path.module}/scripts/install-docker.sh"),
+#     file("${path.module}/scripts/setup-jenkins-docker.sh")
+#   ]))
+#   tags                  = var.tags
+# }
+
+# # Compute (VM para SonarQube)
+# module "sonarqube_qa_vm" {
+#   source                = "./modules/devsecops/quality-assurance/sonarqube"
+#   resource_group_name   = module.resource_group.name
+#   location              = var.location
+#   prefix                = "${var.prefix}-sonarqube"
+#   subnet_id             = module.networking.app_subnet_id
+#   vm_size               = var.sonarqube_vm_size
+#   admin_username        = var.admin_username
+#   admin_password        = var.admin_password
+#   disable_password_auth = false
+#   admin_ssh_key_data    = tls_private_key.ssh_key.public_key_openssh
+#   public_ip_name        = "${var.prefix}-sonarqube-pip"
+#   private_ip_address    = var.sonarqube_private_ip
+#   custom_data           = base64encode(join("\n", [
+#     file("${path.module}/scripts/install-docker.sh"),
+#     file("${path.module}/scripts/setup-sonarqube-docker.sh")
+#   ]))
+#   tags                  = var.tags
+# }
+
+# # Trivy Security Scanner
+# module "trivy_security_scanner" {
+#   source              = "./modules/devsecops/security-scanner/trivy"
+#   resource_group_name = module.resource_group.name
+#   location            = var.location
+#   prefix              = var.prefix
+  
+#   # Integração com ACR
+#   acr_login_server    = module.container_registry.login_server
+#   acr_admin_username  = module.container_registry.admin_username
+#   acr_admin_password  = module.container_registry.admin_password
+#   acr_dependency      = module.container_registry
+  
+#   tags = merge(var.tags, {
+#     Module      = "DevSecOps"
+#     Component   = "Security-Scanner"
+#     Tool        = "Trivy"
+#     Environment = var.environment
+#   })
+# }
+
+# # OWASP ZAP Proxy Security Testing
+# module "owasp_zap_testing" {
+#   source              = "./modules/devsecops/proxy-security/owasp-zap"
+#   resource_group_name = module.resource_group.name
+#   location            = var.location
+#   prefix              = var.prefix
+  
+#   # Integração com ACR
+#   acr_login_server    = module.container_registry.login_server
+#   acr_admin_username  = module.container_registry.admin_username
+#   acr_admin_password  = module.container_registry.admin_password
+#   acr_dependency      = module.container_registry
+  
+#   tags = merge(var.tags, {
+#     Module      = "DevSecOps"
+#     Component   = "Quality-Assurance"
+#     Tool        = "OWASP-ZAP"
+#     Environment = var.environment
+#   })
+# }
+
+# # # Grafana Monitoring Stack
+# module "grafana_monitoring" {
+#   source              = "./modules/devsecops/monitoring/prometheus-grafana"
+#   resource_group_name = module.resource_group.name
+#   location            = var.location
+#   prefix              = var.prefix
+  
+#   # Integração com ACR
+#   acr_login_server    = module.container_registry.login_server
+#   acr_admin_username  = module.container_registry.admin_username
+#   acr_admin_password  = module.container_registry.admin_password
+#   acr_dependency      = module.container_registry
+  
+#   # Configurações específicas
+#   grafana_admin_password = "GrafanaAdmin123!"  # Mude para uma senha segura
+  
+#   # Integração com outros serviços
+#   trivy_dashboard_ip = module.trivy_security_scanner.trivy_dashboard_ip
+#   zap_dashboard_ip   = module.owasp_zap_testing.zap_dashboard_ip
+#   jenkins_vm_ip      = module.jenkins_pipeline_vm.private_ip_address
+  
+#   tags = merge(var.tags, {
+#     Module      = "DevSecOps"
+#     Component   = "Monitoring"
+#     Tool        = "Grafana"
+#     Environment = var.environment
+#   })
+# }

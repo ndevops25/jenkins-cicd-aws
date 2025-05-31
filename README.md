@@ -1,7 +1,7 @@
 Pipeline CI/CD com Jenkins, SonarQube, ECR e ECS 🚀
 ===================================================
 
-Este projeto implementa um pipeline completo de CI/CD usando Jenkins para uma aplicação Python Flask, com deploy automatizado na AWS utilizando Docker, ECR (Elastic Container Registry) e ECS (Elastic Container Service). Inclui análise de código com SonarQube para manter a qualidade do código.
+Este projeto implementa um pipeline completo de CI/CD usando Jenkins para uma aplicação Python Flask, com deploy automatizado na AWS utilizando Docker, ECR (Elastic Container Registry) e ECS (Elastic Container Service), Trivy para escaneamento de vulnerabilidades, proxy de segurança com OWASP-ZAP e alertas e monitoramento com Prometheus e Grafana.. Inclui análise de código com SonarQube para manter a qualidade do código.
 
 <img src="/docs/images/pipeline-running.png" alt="Jenkins Pipeline">
 
@@ -48,10 +48,27 @@ Este projeto implementa um pipeline completo de CI/CD usando Jenkins para uma ap
 -   **GitHub**: Repositório de código fonte
 -   **Jenkins**: Servidor de CI/CD para execução do pipeline
 -   **SonarQube**: Ferramenta de análise de qualidade de código
+-   **Trivy**: Scanner de vulnerabilidades
+-   **OWASP ZAP** - Testes de segurança web
+-   **Prometheus** - Métrica
+-   **Grafana** - Dashboards
 -   **Docker**: Containerização da aplicação
 -   **ECR**: Registro de imagens Docker na AWS
 -   **ECS/Fargate**: Orquestração de containers sem servidor
 -   **ALB**: Load Balancer para distribuição de tráfego
+
+**🚀 Parte em desenvolvimento - DevSecOps completo:**
+--------------------------------------------
+
+### **🛡️ Segurança (DevSecOps):**
+
+-   **Trivy** - Scanner de vulnerabilidades
+-   **OWASP ZAP** - Testes de segurança web
+
+### **📊 Observabilidade:**
+
+-   **Prometheus** - Métricas
+-   **Grafana** - Dashboards
 
 🔧 Pré-requisitos
 -----------------
