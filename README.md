@@ -27,8 +27,6 @@ Este projeto implementa um pipeline completo de CI/CD usando Jenkins para uma ap
 🏗️ Arquitetura
 ---------------
 
-<img src="/docs/images/pipeline-running.png" alt="Jenkins Pipeline">
-
 ### Componentes:
 
 -   **GitHub**: Repositório de código fonte
@@ -265,6 +263,8 @@ terraform apply -var="key_name=jenkins-key-dev" -auto-approve
 
 ⚙️ Configuração do Jenkins
 --------------------------
+
+<img src="/docs/images/pipeline-running.png" alt="Jenkins Pipeline">
 
 ### 1\. Acessar Jenkins
 
