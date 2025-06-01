@@ -29,22 +29,6 @@ Este projeto implementa um pipeline completo de CI/CD usando Jenkins para uma ap
 
 <img src="/docs/images/pipeline-running.png" alt="Jenkins Pipeline">
 
-```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│   GitHub    │────▶│   Jenkins   │────▶│     ECR     │────▶│  ECS/Fargate│
-└─────────────┘     └─────────────┘     └─────────────┘     └─────────────┘
-                           │                                        │
-                           ▼                                        ▼
-                    ┌─────────────┐                          ┌─────────────┐
-                    │  SonarQube  │                          │     ALB     │
-                    └─────────────┘                          └─────────────┘
-                                                                    │
-                                                                    ▼
-                                                             ┌─────────────┐
-                                                             │  Internet   │
-                                                             └─────────────┘
-```
-
 ### Componentes:
 
 -   **GitHub**: Repositório de código fonte
@@ -93,43 +77,146 @@ Este projeto implementa um pipeline completo de CI/CD usando Jenkins para uma ap
 -   Terraform para IaC
 -   Análise de qualidade de código com SonarQube
 
-📁 Estrutura do Projeto
------------------------
-
-O projeto está organizado da seguinte forma:
+🚀 Estrutura do Projeto DEVSECOPS-AWS
+==================================
 
 ```
-jenkins-cicd-aws/
-├── terraform/                    # Infraestrutura como Código
-│   ├── main.tf                  # Configuração principal
-│   ├── variables.tf             # Variáveis
-│   ├── outputs.tf               # Outputs
-│   ├── modules/                 # Módulos Terraform
-│   │   ├── vpc/                 # Configuração de rede
-│   │   ├── security/            # Security Groups
-│   │   ├── compute/             # Instâncias EC2
-│   │   ├── ecr/                 # Container Registry
-│   │   ├── ecs/                 # Container Service
-│   │   └── elastic-ip/          # IPs elásticos
-│   ├── environments/
-│   │   ├── dev/                 # Configurações para ambiente de desenvolvimento
-│   │   └── prod/                # Configurações para ambiente de produção
-│   └── .terraform.lock.hcl
-├── sample-app/                  # Aplicação de exemplo
-│   ├── app.py                   # Aplicação Flask
-│   ├── requirements.txt         # Dependências Python
-│   ├── Dockerfile               # Imagem Docker
-│   ├── test_app.py              # Testes unitários
-│   ├── Jenkinsfile              # Pipeline CI/CD
-│   └── sonar-project.properties # Configuração do SonarQube
-├── scripts/                     # Scripts auxiliares
-│   ├── docker/                  # Scripts relacionados ao Docker
-│   │   ├── jenkins-docker.sh    # Script para Jenkins com Docker
-│   │   └── sonarqube-docker.sh  # Script para SonarQube com Docker
-│   └── compute/                 # Scripts para configuração de instâncias
-│       └── install-jenkins-without-docker.sh
-└── README.md                    # Este arquivo
+DEVSECOPS-AWS/
+├── docs/                                    # Documentação do projeto
+│   ├── architecture/                        # Documentação da arquitetura
+│   └── images/                             # Imagens e diagramas
+├── pipelines/aws/                          # Pipelines de CI/CD para AWS
+│   └── Jenkinsfile                         # Pipeline Jenkins principal
+├── sample-app/                             # Aplicação de exemplo
+│   ├── .gitignore                          # Arquivos ignorados pelo Git
+│   ├── app.py                              # Aplicação Flask Python
+│   ├── Dockerfile                          # Imagem Docker da aplicação
+│   ├── Jenkinsfile                         # Pipeline Jenkins da aplicação
+│   ├── requirements.txt                    # Dependências Python
+│   ├── sonar-project.properties            # Configuração do SonarQube
+│   └── test_app.py                         # Testes unitários da aplicação
+├── scripts/                                # Scripts auxiliares
+├── terraform/aws/                          # Infraestrutura como Código
+│   ├── modules/                            # Módulos Terraform reutilizáveis
+│   │   ├── compute/                        # Módulo para instâncias EC2
+│   │   │   ├── ami.tf                      # Configuração de AMIs
+│   │   │   ├── iam.tf                      # Roles e políticas IAM
+│   │   │   ├── jenkins_compute.tf          # Instâncias para Jenkins
+│   │   │   ├── jenkins.sh                  # Script de inicialização Jenkins
+│   │   │   ├── locals.tf                   # Variáveis locais
+│   │   │   ├── outputs.tf                  # Outputs do módulo
+│   │   │   ├── sonarqube_compute.tf        # Instâncias para SonarQube
+│   │   │   ├── sonarqube.sh                # Script de inicialização SonarQube
+│   │   │   └── variables.tf                # Variáveis do módulo
+│   │   ├── devsecops/                      # Módulo DevSecOps
+│   │   │   ├── monitoring/prometheus-grafana/  # Stack de monitoramento
+│   │   │   │   ├── temp_build/             # Arquivos temporários de build
+│   │   │   │   ├── build_monitoring_stack.tf   # Build da stack de monitoramento
+│   │   │   │   ├── grafana_config.tf       # Configuração do Grafana
+│   │   │   │   ├── grafana_dashboards.tf   # Dashboards do Grafana
+│   │   │   │   ├── grafana_datasources.tf  # Fontes de dados do Grafana
+│   │   │   │   ├── grafana_dockerfile.tf   # Dockerfile do Grafana
+│   │   │   │   ├── monitoring_stack_aci.tf # Stack de monitoramento no ACI
+│   │   │   │   ├── monitoring_stack_dockerfile.tf # Dockerfile da stack
+│   │   │   │   ├── outputs.tf              # Outputs do monitoramento
+│   │   │   │   ├── prometheus_alerts.tf    # Alertas do Prometheus
+│   │   │   │   ├── prometheus_config.tf    # Configuração do Prometheus
+│   │   │   │   └── variables.tf            # Variáveis do monitoramento
+│   │   │   ├── pipeline/jenkins/           # Pipeline Jenkins
+│   │   │   │   ├── main.tf                 # Configuração principal Jenkins
+│   │   │   │   ├── outputs.tf              # Outputs do pipeline
+│   │   │   │   └── variables.tf            # Variáveis do pipeline
+│   │   │   ├── proxy-security/owasp-zap/   # Proxy de segurança OWASP ZAP
+│   │   │   │   ├── temp_build/             # Arquivos temporários
+│   │   │   │   ├── build_zap_image.tf      # Build da imagem ZAP
+│   │   │   │   ├── outputs.tf              # Outputs do ZAP
+│   │   │   │   ├── owasp_zap_aci.tf        # ZAP no Azure Container Instances
+│   │   │   │   ├── variables.tf            # Variáveis do ZAP
+│   │   │   │   ├── zap_dashboard_app.tf    # Dashboard do ZAP
+│   │   │   │   ├── zap_dashboard_template.tf # Template do dashboard ZAP
+│   │   │   │   ├── zap_dockerfile.tf       # Dockerfile do ZAP
+│   │   │   │   └── zap_report_template.tf  # Template de relatório ZAP
+│   │   │   ├── quality-assurance/sonarqube/ # Garantia de qualidade
+│   │   │   │   ├── main.tf                 # Configuração principal SonarQube
+│   │   │   │   ├── outputs.tf              # Outputs do SonarQube
+│   │   │   │   └── variables.tf            # Variáveis do SonarQube
+│   │   │   └── security-scanner/trivy/     # Scanner de segurança Trivy
+│   │   │       ├── temp_build/             # Arquivos temporários
+│   │   │       ├── build_trivy_image.tf    # Build da imagem Trivy
+│   │   │       ├── outputs.tf              # Outputs do Trivy
+│   │   │       ├── trivy_dashboard_aci.tf  # Dashboard Trivy no ACI
+│   │   │       ├── trivy_dashboard_app.tf  # Aplicação dashboard Trivy
+│   │   │       ├── trivy_dashboard_template.tf # Template dashboard Trivy
+│   │   │       ├── trivy_dockerfile.tf     # Dockerfile do Trivy
+│   │   │       ├── trivy_report_template.tf # Template relatório Trivy
+│   │   │       └── variables.tf            # Variáveis do Trivy
+│   │   ├── ecr/                            # Elastic Container Registry
+│   │   │   ├── main.tf                     # Configuração principal ECR
+│   │   │   ├── outputs.tf                  # Outputs do ECR
+│   │   │   └── variables.tf                # Variáveis do ECR
+│   │   ├── ecs/                            # Elastic Container Service
+│   │   │   ├── main.tf                     # Configuração principal ECS
+│   │   │   ├── outputs.tf                  # Outputs do ECS
+│   │   │   └── variables.tf                # Variáveis do ECS
+│   │   ├── elastic-ip/                     # IPs Elásticos
+│   │   │   ├── main.tf                     # Configuração de IPs elásticos
+│   │   │   ├── outputs.tf                  # Outputs dos IPs
+│   │   │   └── variables.tf                # Variáveis dos IPs
+│   │   ├── network/                        # Configuração de rede
+│   │   │   ├── main.tf                     # Configuração principal da rede
+│   │   │   ├── outputs.tf                  # Outputs da rede
+│   │   │   └── variables.tf                # Variáveis da rede
+│   │   └── security/                       # Configuração de segurança
+│   │       ├── main.tf                     # Configuração principal segurança
+│   │       ├── outputs.tf                  # Outputs de segurança
+│   │       ├── providers.tf                # Provedores Terraform
+│   │       └── variables.tf                # Variáveis de segurança
+│   ├── main.tf                             # Arquivo principal Terraform
+│   ├── outputs.tf                          # Outputs principais
+│   └── variables.tf                        # Variáveis principais
+├── .gitignore                              # Arquivos ignorados pelo Git
+└── README.md                               # Documentação principal do projeto
+
 ```
+
+Descrição dos Componentes Principais
+------------------------------------
+
+### 🏗️ **Terraform/AWS**
+
+-   **Infraestrutura como Código** para provisionamento de recursos AWS
+-   **Módulos reutilizáveis** para diferentes componentes da arquitetura
+-   **Configuração modular** para facilitar manutenção e escalabilidade
+
+### 🔧 **Sample-App**
+
+-   **Aplicação Flask** de exemplo para demonstrar o pipeline
+-   **Testes unitários** e configuração de qualidade de código
+-   **Containerização** com Docker
+
+### 🚀 **DevSecOps Pipeline**
+
+-   **Jenkins** para CI/CD
+-   **SonarQube** para análise de qualidade de código
+-   **OWASP ZAP** para testes de segurança
+-   **Trivy** para scanner de vulnerabilidades
+-   **Prometheus/Grafana** para monitoramento
+
+### 🔐 **Segurança Integrada**
+
+-   **Análise estática** de código
+-   **Testes de penetração** automatizados
+-   **Scanner de vulnerabilidades** em containers
+-   **Monitoramento** de segurança em tempo real
+
+### ☁️ **Serviços AWS**
+
+-   **EC2** para instâncias de compute
+-   **ECR** para registry de containers
+-   **ECS** para orquestração de containers
+-   **VPC** para isolamento de rede
+-   **Security Groups** para controle de acesso
+
 
 🚀 Configuração da Infraestrutura
 ---------------------------------
