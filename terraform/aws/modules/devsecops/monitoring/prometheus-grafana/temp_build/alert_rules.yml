@@ -1,0 +1,40 @@
+groups:
+  - name: security.rules
+    rules:
+      - alert: HighVulnerabilityDetected
+        expr: vulnerabilities_high_severity > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High severity vulnerability detected"
+          description: "{{ $value }} high severity vulnerabilities found"
+
+      - alert: SecurityScanFailed
+        expr: increase(security_scan_failures_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Security scan failed"
+          description: "Security scanning has failed {{ $value }} times in the last 5 minutes"
+
+  - name: pipeline.rules
+    rules:
+      - alert: PipelineFailureRate
+        expr: (rate(jenkins_builds_failed_total[10m]) / rate(jenkins_builds_total[10m])) > 0.2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High pipeline failure rate"
+          description: "Pipeline failure rate is {{ $value | humanizePercentage }}"
+
+      - alert: PipelineDuration
+        expr: jenkins_build_duration_seconds > 1800
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Pipeline taking too long"
+          description: "Pipeline has been running for {{ $value | humanizeDuration }}"
